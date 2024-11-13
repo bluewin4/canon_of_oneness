@@ -5,6 +5,7 @@ from ..story.story_parser import StorySegment
 from sklearn.metrics.pairwise import cosine_similarity
 import logging
 import os
+import json
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -21,10 +22,44 @@ class VectorEngine:
         self.segment_embeddings: Dict[str, np.ndarray] = {}
         self.current_position: np.ndarray = None
         self.segments: Dict[str, StorySegment] = {}
-        self.oracle_threshold = 0.5
-        self.failure_threshold = 0.3
-        self.distance_multiplier = 1.0
         
+        # Load parameters from file if they exist, otherwise use defaults
+        self.load_parameters()
+
+    def load_parameters(self, param_file: str = "cache/parameters.json") -> None:
+        """Load parameters from JSON file if it exists, otherwise use defaults."""
+        try:
+            if os.path.exists(param_file):
+                with open(param_file, 'r') as f:
+                    params = json.load(f)
+                self.oracle_threshold = params['oracle_threshold']
+                self.failure_threshold = params['failure_threshold']
+                self.distance_multiplier = params['distance_multiplier']
+                logger.info("Loaded parameters from parameters file")
+            else:
+                # Default values
+                self.oracle_threshold = 0.5
+                self.failure_threshold = 0.3
+                self.distance_multiplier = 1.0
+        except Exception as e:
+            logger.error(f"Error loading parameters: {e}")
+            # Fall back to defaults
+            self.oracle_threshold = 0.5
+            self.failure_threshold = 0.3
+            self.distance_multiplier = 1.0
+
+    def save_parameters(self, param_file: str = "cache/parameters.json") -> None:
+        """Save current parameters to a JSON file."""
+        os.makedirs(os.path.dirname(param_file), exist_ok=True)
+        params = {
+            'oracle_threshold': float(self.oracle_threshold),
+            'failure_threshold': float(self.failure_threshold),
+            'distance_multiplier': float(self.distance_multiplier)
+        }
+        with open(param_file, 'w') as f:
+            json.dump(params, f, indent=4)
+        logger.info("Saved parameters to file")
+
     def embed_segments(self, segments: Dict[str, StorySegment]) -> None:
         """Compute embeddings for all story segments."""
         for segment_id, segment in segments.items():

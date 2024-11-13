@@ -1,0 +1,5 @@
+{
+    "oracle_threshold": 0.4,
+    "failure_threshold": 0.2,
+    "distance_multiplier": 0.8
+}
