@@ -21,6 +21,9 @@ class VectorEngine:
         self.segment_embeddings: Dict[str, np.ndarray] = {}
         self.current_position: np.ndarray = None
         self.segments: Dict[str, StorySegment] = {}
+        self.oracle_threshold = 0.5
+        self.failure_threshold = 0.3
+        self.distance_multiplier = 1.0
         
     def embed_segments(self, segments: Dict[str, StorySegment]) -> None:
         """Compute embeddings for all story segments."""
@@ -78,6 +81,7 @@ class VectorEngine:
         stability = 1 / (1 + np.exp(-5 * (max_similarity - 0.7)))  # Sigmoid centered at 0.7
         
         # Clip to ensure we stay in [0,1] range
+        stability = stability * self.distance_multiplier
         return float(np.clip(stability, 0.0, 1.0))
     
     def check_memory_trigger(self, 
@@ -135,27 +139,42 @@ class VectorEngine:
         self.save_embeddings(cache_file)
 
     def save_embeddings(self, cache_file: str = "cache/embeddings.npy") -> None:
-        """Save segment embeddings to a cache file."""
+        """Save segment embeddings and parameters to a cache file."""
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         np.save(cache_file, {
             'embeddings': self.segment_embeddings,
-            'segments': self.segments
+            'segments': self.segments,
+            'parameters': {
+                'oracle_threshold': self.oracle_threshold,
+                'failure_threshold': self.failure_threshold,
+                'distance_multiplier': self.distance_multiplier
+            }
         }, allow_pickle=True)
 
     def load_embeddings(self, cache_file: str = "cache/embeddings.npy") -> bool:
-        """Load segment embeddings from cache file if available.
-        
-        Returns:
-            bool: True if embeddings were loaded successfully, False otherwise
-        """
+        """Load segment embeddings and parameters from cache file if available."""
         try:
             if os.path.exists(cache_file):
                 cached_data = np.load(cache_file, allow_pickle=True).item()
                 self.segment_embeddings = cached_data['embeddings']
                 self.segments = cached_data['segments']
+                
+                # Load parameters if they exist in cache
+                if 'parameters' in cached_data:
+                    params = cached_data['parameters']
+                    self.oracle_threshold = params['oracle_threshold']
+                    self.failure_threshold = params['failure_threshold']
+                    self.distance_multiplier = params['distance_multiplier']
+                    logger.info("Loaded parameters from cache")
+                
                 logger.info("Loaded embeddings from cache")
                 return True
             return False
         except Exception as e:
             logger.error(f"Error loading embeddings cache: {e}")
             return False
+
+    def set_parameters(self, oracle_threshold, failure_threshold, distance_multiplier):
+        self.oracle_threshold = oracle_threshold
+        self.failure_threshold = failure_threshold
+        self.distance_multiplier = distance_multiplier

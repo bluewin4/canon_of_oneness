@@ -95,6 +95,10 @@ Stories are structured in `story.txt` with segments marked by IDs:
    ```bash
    conda env create -f environment.yml
    ```
+3. Run the parameter optimization script to find the best parameters, if you find the story is unstable or want to change the story/oracle sequences:
+    ```bash
+    python optimize_parameters.py
+    ```
 
 ### Running the Game
 
