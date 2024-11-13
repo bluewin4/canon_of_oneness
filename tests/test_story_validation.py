@@ -215,10 +215,13 @@ class ParameterOptimizer(unittest.TestCase):
                 distance_multiplier=best_params[2]
             )
             
-            # Save to cache
+            # Save parameters to a dedicated parameters file
+            self.vector_engine.save_parameters("cache/parameters.json")
+            
+            # Save embeddings with updated parameters
             self.vector_engine.save_embeddings()
             
-            self.console.print("\n[green]Best Parameters Found and Saved to Cache:[/green]")
+            self.console.print("\n[green]Best Parameters Found and Saved:[/green]")
             self.console.print(f"Oracle Threshold: {best_params[0]:.3f}")
             self.console.print(f"Failure Threshold: {best_params[1]:.3f}")
             self.console.print(f"Distance Multiplier: {best_params[2]:.3f}")
@@ -238,6 +241,7 @@ class ParameterOptimizer(unittest.TestCase):
             failure_embedding = self.vector_engine.embed_response(failure.content)
             failure_stability = self.vector_engine.calculate_stability(failure_embedding)
             
+            # Use the same thresholds as the game
             if oracle_stability <= failure_stability:
                 failures.append(f"{section_id}: Oracle ({oracle_stability:.2f}) <= Failure ({failure_stability:.2f})")
             
