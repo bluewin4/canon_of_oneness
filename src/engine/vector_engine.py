@@ -28,11 +28,28 @@ class VectorEngine:
         return self.model.encode(text, normalize_embeddings=True)
     
     def calculate_distances(self, response_embedding: np.ndarray) -> Dict[str, float]:
-        """Calculate cosine distances between response and all segments."""
+        """Calculate DIEM distances between response and all segments."""
         distances = {}
+        n = len(response_embedding)  # dimension of embeddings
+        
+        # For normalized vectors, E[d(n)] = sqrt(2)
+        expected_dist = np.sqrt(2)
+        
+        # For normalized vectors, variance is approximately 2/n
+        variance = 2/n
+        
+        # Scale factor to make distances more meaningful
+        scale_factor = 10.0  # Adjust this value to get desired range
+        
         for segment_id, segment_embedding in self.segment_embeddings.items():
-            distance = 1 - np.dot(response_embedding, segment_embedding)
-            distances[segment_id] = float(distance)  # Convert to float for JSON serialization
+            # Calculate Euclidean distance
+            euclidean_dist = np.sqrt(np.sum((response_embedding - segment_embedding) ** 2))
+            
+            # Apply DIEM formula with scaling
+            diem = scale_factor * ((euclidean_dist - expected_dist) / np.sqrt(variance))
+            
+            distances[segment_id] = float(diem)
+            
         return distances
     
     def find_nearest_segments(self, 
@@ -60,22 +77,30 @@ class VectorEngine:
             self.current_position = self.current_position / np.linalg.norm(self.current_position)
     
     def calculate_stability(self, response_embedding: np.ndarray) -> float:
-        """Calculate system stability (0-1) based on distances to known segments."""
+        """Calculate system stability (0-1) based on DIEM distances."""
         distances = self.calculate_distances(response_embedding)
         min_distance = min(distances.values())
-        # Convert distance to stability (closer = more stable)
-        # Using a sigmoid-like curve for smooth transition
-        stability = 1 / (1 + np.exp(10 * (min_distance - 0.5)))
-        return float(stability)
+        
+        # Adjust these parameters to tune the stability curve
+        stability = 1 / (1 + np.exp(min_distance / 2))  # Gentler sigmoid curve
+        
+        # Clip to ensure we stay in [0,1] range
+        return float(np.clip(stability, 0.0, 1.0))
     
     def check_memory_trigger(self, 
                            response_embedding: np.ndarray, 
-                           threshold: float = 0.2) -> List[str]:
-        """Check if any memories should be triggered based on proximity."""
+                           threshold: float = -2.0) -> List[str]:
+        """Check if any memories should be triggered based on proximity.
+        
+        Args:
+            response_embedding: The embedding of the player's response
+            threshold: DIEM distance threshold (negative values are closer matches)
+        """
         triggered_memories = []
         distances = self.calculate_distances(response_embedding)
         
         for segment_id, distance in distances.items():
+            # Only trigger for very close semantic matches
             if segment_id.startswith('Memory_') and distance < threshold:
                 triggered_memories.append(segment_id)
                 
