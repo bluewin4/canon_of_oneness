@@ -31,7 +31,7 @@ class GameCLI(cmd.Cmd):
         
         self.console.print("Loading vector engine...", style="yellow")
         self.vector_engine = VectorEngine()
-        self.vector_engine.embed_segments(self.segments)
+        self.vector_engine.set_segments(self.segments)
         
         self.state_machine = StateMachine(self.segments)
         self.response_handler = ResponseHandler(self.vector_engine, self.state_machine)

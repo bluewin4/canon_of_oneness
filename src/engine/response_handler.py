@@ -67,7 +67,10 @@ class ResponseHandler:
             response_embedding = self.vector_engine.embed_response(cleaned_input)
             stability = self.vector_engine.calculate_stability(response_embedding)
             nearest_segments = self.vector_engine.find_nearest_segments(response_embedding)
-            triggered_memories = self.vector_engine.check_memory_trigger(response_embedding)
+            triggered_memories = self.vector_engine.check_memory_trigger(
+                response_embedding=response_embedding,
+                response_text=cleaned_input
+            )
             
             # Update vector position
             self.vector_engine.update_position(response_embedding)

@@ -2,6 +2,12 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 from typing import Dict, List, Tuple
 from ..story.story_parser import StorySegment
+from sklearn.metrics.pairwise import cosine_similarity
+import logging
+import os
+
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 class VectorEngine:
     def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
@@ -14,6 +20,7 @@ class VectorEngine:
         self.model = SentenceTransformer(model_name)
         self.segment_embeddings: Dict[str, np.ndarray] = {}
         self.current_position: np.ndarray = None
+        self.segments: Dict[str, StorySegment] = {}
         
     def embed_segments(self, segments: Dict[str, StorySegment]) -> None:
         """Compute embeddings for all story segments."""
@@ -27,37 +34,23 @@ class VectorEngine:
         """Compute embedding for a player's response."""
         return self.model.encode(text, normalize_embeddings=True)
     
-    def calculate_distances(self, response_embedding: np.ndarray) -> Dict[str, float]:
-        """Calculate DIEM distances between response and all segments."""
-        distances = {}
-        n = len(response_embedding)  # dimension of embeddings
-        
-        # For normalized vectors, E[d(n)] = sqrt(2)
-        expected_dist = np.sqrt(2)
-        
-        # For normalized vectors, variance is approximately 2/n
-        variance = 2/n
-        
-        # Scale factor to make distances more meaningful
-        scale_factor = 10.0  # Adjust this value to get desired range
-        
+    def calculate_cosine_similarity(self, response_embedding: np.ndarray) -> Dict[str, float]:
+        """Calculate cosine similarity between response and all segments."""
+        similarities = {}
         for segment_id, segment_embedding in self.segment_embeddings.items():
-            # Calculate Euclidean distance
-            euclidean_dist = np.sqrt(np.sum((response_embedding - segment_embedding) ** 2))
-            
-            # Apply DIEM formula with scaling
-            diem = scale_factor * ((euclidean_dist - expected_dist) / np.sqrt(variance))
-            
-            distances[segment_id] = float(diem)
-            
-        return distances
+            similarity = cosine_similarity(
+                response_embedding.reshape(1, -1),
+                segment_embedding.reshape(1, -1)
+            )[0][0]
+            similarities[segment_id] = float(similarity)
+        return similarities
     
     def find_nearest_segments(self, 
-                            response_embedding: np.ndarray, 
-                            n: int = 3) -> List[Tuple[str, float]]:
-        """Find the n nearest segments to the response."""
-        distances = self.calculate_distances(response_embedding)
-        sorted_segments = sorted(distances.items(), key=lambda x: x[1])
+                              response_embedding: np.ndarray, 
+                              n: int = 3) -> List[Tuple[str, float]]:
+        """Find the n nearest segments to the response based on cosine similarity."""
+        similarities = self.calculate_cosine_similarity(response_embedding)
+        sorted_segments = sorted(similarities.items(), key=lambda x: x[1], reverse=True)
         return sorted_segments[:n]
     
     def update_position(self, response_embedding: np.ndarray, 
@@ -72,36 +65,97 @@ class VectorEngine:
             self.current_position = response_embedding
         else:
             self.current_position = (1 - learning_rate) * self.current_position + \
-                                  learning_rate * response_embedding
+                                      learning_rate * response_embedding
             # Renormalize
             self.current_position = self.current_position / np.linalg.norm(self.current_position)
     
     def calculate_stability(self, response_embedding: np.ndarray) -> float:
-        """Calculate system stability (0-1) based on DIEM distances."""
-        distances = self.calculate_distances(response_embedding)
-        min_distance = min(distances.values())
+        """Calculate system stability (0-1) based on cosine similarities."""
+        similarities = self.calculate_cosine_similarity(response_embedding)
+        max_similarity = max(similarities.values())
         
         # Adjust these parameters to tune the stability curve
-        stability = 1 / (1 + np.exp(min_distance / 2))  # Gentler sigmoid curve
+        stability = 1 / (1 + np.exp(-5 * (max_similarity - 0.7)))  # Sigmoid centered at 0.7
         
         # Clip to ensure we stay in [0,1] range
         return float(np.clip(stability, 0.0, 1.0))
     
     def check_memory_trigger(self, 
-                           response_embedding: np.ndarray, 
-                           threshold: float = -2.0) -> List[str]:
-        """Check if any memories should be triggered based on proximity.
+                             response_embedding: np.ndarray, 
+                             response_text: str,
+                             threshold: float = 0.7) -> List[str]:
+        """Check if any memories should be triggered based on explicit triggers and semantic similarity.
         
         Args:
             response_embedding: The embedding of the player's response
-            threshold: DIEM distance threshold (negative values are closer matches)
+            response_text: The actual text of the player's response
+            threshold: Cosine similarity threshold for triggering memories
         """
         triggered_memories = []
-        distances = self.calculate_distances(response_embedding)
         
-        for segment_id, distance in distances.items():
-            # Only trigger for very close semantic matches
-            if segment_id.startswith('Memory_') and distance < threshold:
-                triggered_memories.append(segment_id)
-                
-        return triggered_memories 
+        # First, check for trigger phrases
+        for segment_id, segment_embedding in self.segment_embeddings.items():
+            if not segment_id.startswith('Memory_'):
+                continue
+            
+            segment = self.segments.get(segment_id)
+            if segment and segment.triggers:
+                for trigger in segment.triggers:
+                    if trigger.lower() in response_text.lower():
+                        triggered_memories.append(segment_id)
+                        break
+        
+        # If no triggers matched, fallback to semantic similarity
+        if not triggered_memories:
+            similarities = self.calculate_cosine_similarity(response_embedding)
+            for segment_id, similarity in similarities.items():
+                if segment_id.startswith('Memory_') and similarity >= threshold:
+                    triggered_memories.append(segment_id)
+        
+        return triggered_memories
+
+    def set_segments(self, segments: Dict[str, StorySegment]) -> None:
+        """Set the story segments and compute their embeddings.
+        
+        Args:
+            segments: Dictionary of story segments
+        """
+        cache_file = "cache/embeddings.npy"
+        
+        # Try to load from cache first
+        if self.load_embeddings(cache_file):
+            return
+        
+        # If cache doesn't exist or failed to load, compute embeddings
+        logger.info("Computing embeddings for segments...")
+        self.segments = segments
+        self.embed_segments(segments)
+        
+        # Save to cache for future use
+        self.save_embeddings(cache_file)
+
+    def save_embeddings(self, cache_file: str = "cache/embeddings.npy") -> None:
+        """Save segment embeddings to a cache file."""
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        np.save(cache_file, {
+            'embeddings': self.segment_embeddings,
+            'segments': self.segments
+        }, allow_pickle=True)
+
+    def load_embeddings(self, cache_file: str = "cache/embeddings.npy") -> bool:
+        """Load segment embeddings from cache file if available.
+        
+        Returns:
+            bool: True if embeddings were loaded successfully, False otherwise
+        """
+        try:
+            if os.path.exists(cache_file):
+                cached_data = np.load(cache_file, allow_pickle=True).item()
+                self.segment_embeddings = cached_data['embeddings']
+                self.segments = cached_data['segments']
+                logger.info("Loaded embeddings from cache")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error loading embeddings cache: {e}")
+            return False

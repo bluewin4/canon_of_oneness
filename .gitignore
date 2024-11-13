@@ -96,4 +96,7 @@ wheels/
 dmypy.json
 
 # Pyre type checker
-.pyre/ 
+.pyre/
+
+# Cache
+cache/embeddings.npy 
