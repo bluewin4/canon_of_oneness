@@ -67,13 +67,20 @@ class StoryParser:
         return self.segments
     
     def _add_segment(self, segment_id: str, content: List[str], parent_paragraph: Optional[str], triggers: Set[str]):
+        """Add a segment to the story with debug logging."""
         segment_type = segment_id.split('_')[0].lower()
+        
+        # Debug logging
+        print(f"Adding segment {segment_id}")
+        if triggers:
+            print(f"  with triggers: {triggers}")
+        
         self.segments[segment_id] = StorySegment(
             segment_type=segment_type,
             segment_id=segment_id,
             content='\n'.join(content),
             parent_paragraph=parent_paragraph if segment_type not in ['paragraph', 'oracle', 'failure'] else None,
-            triggers=triggers,
+            triggers=triggers if triggers else set(),  # Ensure triggers is never None
             oracle_pair_id=None  # Will be set later for oracle/failure pairs
         )
     

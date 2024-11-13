@@ -20,6 +20,9 @@ class VectorEngine:
         """
         self.model = SentenceTransformer(model_name)
         self.segment_embeddings: Dict[str, np.ndarray] = {}
+        self.trigger_embeddings: Dict[str, Dict[str, np.ndarray]] = {}
+        self.tag_embeddings: Dict[str, np.ndarray] = {}
+        self.prompt_embeddings: Dict[str, np.ndarray] = {}
         self.current_position: np.ndarray = None
         self.segments: Dict[str, StorySegment] = {}
         
@@ -61,12 +64,46 @@ class VectorEngine:
         logger.info("Saved parameters to file")
 
     def embed_segments(self, segments: Dict[str, StorySegment]) -> None:
-        """Compute embeddings for all story segments."""
+        """Compute embeddings for all story segments and their triggers/tags/prompts."""
         for segment_id, segment in segments.items():
+            # Embed main content
             self.segment_embeddings[segment_id] = self.model.encode(
                 segment.content,
                 normalize_embeddings=True
             )
+            
+            # Debug logging
+            logger.info(f"Embedding segment {segment_id}")
+            
+            # Embed triggers if they exist
+            if segment.triggers:
+                logger.info(f"Found triggers for {segment_id}: {segment.triggers}")
+                self.trigger_embeddings[segment_id] = {}
+                for trigger in segment.triggers:
+                    trigger_embedding = self.model.encode(
+                        trigger,
+                        normalize_embeddings=True
+                    )
+                    self.trigger_embeddings[segment_id][trigger] = trigger_embedding
+                    logger.info(f"Embedded trigger '{trigger}' for {segment_id}")
+            
+            # Embed tags if they exist
+            if hasattr(segment, 'tags') and segment.tags:
+                for tag in segment.tags:
+                    if tag not in self.tag_embeddings:
+                        self.tag_embeddings[tag] = self.model.encode(
+                            tag,
+                            normalize_embeddings=True
+                        )
+            
+            # Embed prompts if they exist
+            if hasattr(segment, 'prompts') and segment.prompts:
+                for prompt in segment.prompts:
+                    if prompt not in self.prompt_embeddings:
+                        self.prompt_embeddings[prompt] = self.model.encode(
+                            prompt,
+                            normalize_embeddings=True
+                        )
     
     def embed_response(self, text: str) -> np.ndarray:
         """Compute embedding for a player's response."""
@@ -119,39 +156,96 @@ class VectorEngine:
         stability = stability * self.distance_multiplier
         return float(np.clip(stability, 0.0, 1.0))
     
-    def check_memory_trigger(self, 
-                             response_embedding: np.ndarray, 
-                             response_text: str,
-                             threshold: float = 0.7) -> List[str]:
-        """Check if any memories should be triggered based on explicit triggers and semantic similarity.
+    def calculate_trigger_similarity(self,
+                                   response_embedding: np.ndarray,
+                                   segment_id: str,
+                                   trigger: str) -> float:
+        """Calculate similarity between response and a specific trigger."""
+        # Debug logging
+        logger.info(f"Calculating similarity for {segment_id}, trigger: {trigger}")
+        logger.info(f"Trigger embeddings available: {list(self.trigger_embeddings.keys())}")
         
-        Args:
-            response_embedding: The embedding of the player's response
-            response_text: The actual text of the player's response
-            threshold: Cosine similarity threshold for triggering memories
-        """
+        if segment_id in self.trigger_embeddings:
+            logger.info(f"Triggers for {segment_id}: {list(self.trigger_embeddings[segment_id].keys())}")
+            
+            if trigger in self.trigger_embeddings[segment_id]:
+                trigger_embedding = self.trigger_embeddings[segment_id][trigger]
+                similarity = cosine_similarity(
+                    response_embedding.reshape(1, -1),
+                    trigger_embedding.reshape(1, -1)
+                )[0][0]
+                logger.info(f"Calculated similarity: {similarity}")
+                return float(similarity)
+            else:
+                logger.warning(f"Trigger '{trigger}' not found in embeddings for {segment_id}")
+        else:
+            logger.warning(f"No trigger embeddings found for {segment_id}")
+        return 0.0
+
+    def check_memory_trigger(self, 
+                             response_embedding: np.ndarray,
+                             threshold: float = 0.5) -> List[str]:
+        """Check if any memories should be triggered based on semantic similarity."""
         triggered_memories = []
         
-        # First, check for trigger phrases
-        for segment_id, segment_embedding in self.segment_embeddings.items():
+        # Debug logging
+        logger.info(f"Checking memory triggers. Available segments: {list(self.trigger_embeddings.keys())}")
+        
+        for segment_id, triggers in self.trigger_embeddings.items():
             if not segment_id.startswith('Memory_'):
                 continue
+                
+            logger.info(f"Checking triggers for {segment_id}")
+            # Check similarity against each trigger embedding
+            trigger_similarities = []
+            for trigger_text, trigger_embedding in triggers.items():
+                similarity = cosine_similarity(
+                    response_embedding.reshape(1, -1),
+                    trigger_embedding.reshape(1, -1)
+                )[0][0]
+                trigger_similarities.append(similarity)
+                logger.info(f"Trigger '{trigger_text}' similarity: {similarity}")
             
-            segment = self.segments.get(segment_id)
-            if segment and segment.triggers:
-                for trigger in segment.triggers:
-                    if trigger.lower() in response_text.lower():
-                        triggered_memories.append(segment_id)
-                        break
-        
-        # If no triggers matched, fallback to semantic similarity
-        if not triggered_memories:
-            similarities = self.calculate_cosine_similarity(response_embedding)
-            for segment_id, similarity in similarities.items():
-                if segment_id.startswith('Memory_') and similarity >= threshold:
-                    triggered_memories.append(segment_id)
+            # If any trigger similarity exceeds threshold, add the memory
+            if any(sim >= threshold for sim in trigger_similarities):
+                triggered_memories.append(segment_id)
+                logger.info(f"Memory triggered: {segment_id}")
         
         return triggered_memories
+
+    def check_tag_matches(self, 
+                         response_embedding: np.ndarray,
+                         threshold: float = 0.7) -> List[str]:
+        """Check for matching tags based on semantic similarity."""
+        matched_tags = []
+        
+        for tag, tag_embedding in self.tag_embeddings.items():
+            similarity = cosine_similarity(
+                response_embedding.reshape(1, -1),
+                tag_embedding.reshape(1, -1)
+            )[0][0]
+            
+            if similarity >= threshold:
+                matched_tags.append(tag)
+        
+        return matched_tags
+
+    def check_prompt_matches(self, 
+                           response_embedding: np.ndarray,
+                           threshold: float = 0.7) -> List[str]:
+        """Check for matching prompts based on semantic similarity."""
+        matched_prompts = []
+        
+        for prompt, prompt_embedding in self.prompt_embeddings.items():
+            similarity = cosine_similarity(
+                response_embedding.reshape(1, -1),
+                prompt_embedding.reshape(1, -1)
+            )[0][0]
+            
+            if similarity >= threshold:
+                matched_prompts.append(prompt)
+        
+        return matched_prompts
 
     def set_segments(self, segments: Dict[str, StorySegment]) -> None:
         """Set the story segments and compute their embeddings.
@@ -174,10 +268,18 @@ class VectorEngine:
         self.save_embeddings(cache_file)
 
     def save_embeddings(self, cache_file: str = "cache/embeddings.npy") -> None:
-        """Save segment embeddings and parameters to a cache file."""
+        """Save all embeddings and parameters to a cache file."""
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        
+        # Debug logging
+        logger.info(f"Saving embeddings to {cache_file}")
+        logger.info(f"Number of trigger embeddings: {len(self.trigger_embeddings)}")
+        
         np.save(cache_file, {
             'embeddings': self.segment_embeddings,
+            'trigger_embeddings': self.trigger_embeddings,
+            'tag_embeddings': self.tag_embeddings,
+            'prompt_embeddings': self.prompt_embeddings,
             'segments': self.segments,
             'parameters': {
                 'oracle_threshold': self.oracle_threshold,
@@ -187,19 +289,21 @@ class VectorEngine:
         }, allow_pickle=True)
 
     def load_embeddings(self, cache_file: str = "cache/embeddings.npy") -> bool:
-        """Load segment embeddings and parameters from cache file if available."""
+        """Load all embeddings and parameters from cache file if available."""
         try:
             if os.path.exists(cache_file):
                 cached_data = np.load(cache_file, allow_pickle=True).item()
                 self.segment_embeddings = cached_data['embeddings']
+                self.trigger_embeddings = cached_data.get('trigger_embeddings', {})
+                self.tag_embeddings = cached_data.get('tag_embeddings', {})
+                self.prompt_embeddings = cached_data.get('prompt_embeddings', {})
                 self.segments = cached_data['segments']
                 
-                # Load parameters if they exist in cache
                 if 'parameters' in cached_data:
                     params = cached_data['parameters']
-                    self.oracle_threshold = params['oracle_threshold']
-                    self.failure_threshold = params['failure_threshold']
-                    self.distance_multiplier = params['distance_multiplier']
+                    self.oracle_threshold = params.get('oracle_threshold', 0.5)
+                    self.failure_threshold = params.get('failure_threshold', 0.3)
+                    self.distance_multiplier = params.get('distance_multiplier', 1.0)
                     logger.info("Loaded parameters from cache")
                 
                 logger.info("Loaded embeddings from cache")
@@ -207,6 +311,9 @@ class VectorEngine:
             return False
         except Exception as e:
             logger.error(f"Error loading embeddings cache: {e}")
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+                logger.info("Removed corrupted cache file")
             return False
 
     def set_parameters(self, oracle_threshold, failure_threshold, distance_multiplier):

@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.table import Table
 from typing import Dict, Tuple, List
 import itertools
+import random
 
 class TestStoryValidation(unittest.TestCase):
     @classmethod
@@ -82,6 +83,7 @@ class TestStoryValidation(unittest.TestCase):
         table.add_column("Memory ID", style="cyan")
         table.add_column("Trigger", style="yellow")
         table.add_column("Test Response", style="blue")
+        table.add_column("Similarity", style="magenta")
         table.add_column("Status", style="bold")
         
         failures = []
@@ -89,12 +91,20 @@ class TestStoryValidation(unittest.TestCase):
         for segment_id, segment in self.segments.items():
             if segment_id.startswith('Memory_') and segment.triggers:
                 for trigger in segment.triggers:
-                    test_response = f"I want to {trigger}"
+                    # Create a more natural test response
+                    test_response = self._create_natural_response(trigger)
                     response_embedding = self.vector_engine.embed_response(test_response)
+                    
+                    # Get similarity score for debugging
+                    similarity = self.vector_engine.calculate_trigger_similarity(
+                        response_embedding,
+                        segment_id,
+                        trigger
+                    )
                     
                     triggered_memories = self.vector_engine.check_memory_trigger(
                         response_embedding,
-                        test_response
+                        threshold=0.5  # Lower threshold for semantic matching
                     )
                     
                     status = "✅ Pass" if segment_id in triggered_memories else "❌ Fail"
@@ -103,15 +113,12 @@ class TestStoryValidation(unittest.TestCase):
                         segment_id,
                         trigger,
                         test_response,
+                        f"{similarity:.3f}",
                         status
                     )
                     
                     if segment_id not in triggered_memories:
-                        failures.append(f"{segment_id}: Failed to trigger with phrase '{trigger}'")
-                        # Print the failed memory content
-                        self.console.print(f"\n[red]Failed Memory Details - {segment_id}:[/red]")
-                        self.console.print("[yellow]Content:[/yellow]", segment.content)
-                        self.console.print("[yellow]Trigger:[/yellow]", trigger)
+                        failures.append(f"{segment_id}: Failed to trigger with phrase '{trigger}' (similarity: {similarity:.3f})")
         
         # Print results table
         self.console.print("\n")
@@ -135,6 +142,17 @@ class TestStoryValidation(unittest.TestCase):
         if not segment.parent_paragraph:
             return None
         return self.segments.get(segment.parent_paragraph)
+    
+    def _create_natural_response(self, trigger: str) -> str:
+        """Create a more natural test response from a trigger phrase."""
+        templates = [
+            f"I remember {trigger}",
+            f"That reminds me of {trigger}",
+            f"It makes me think about {trigger}",
+            f"I'm thinking about {trigger}",
+            f"Let me tell you about {trigger}"
+        ]
+        return random.choice(templates)
 
 class ParameterOptimizer(unittest.TestCase):
     @classmethod
