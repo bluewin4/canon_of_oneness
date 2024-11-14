@@ -1,5 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Set
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class StorySegment:
@@ -7,7 +10,7 @@ class StorySegment:
     segment_id: str
     content: str
     parent_paragraph: Optional[str] = None
-    triggers: Set[str] = None
+    triggers: Set[str] = field(default_factory=set)
     oracle_pair_id: Optional[str] = None  # New field to link oracle/failure pairs
 
 class StoryParser:
@@ -89,8 +92,14 @@ class StoryParser:
         for segment_id, segment in self.segments.items():
             if segment.segment_type == 'oracle':
                 # Get corresponding failure ID
-                failure_id = f"Failure_{segment_id.split('Oracle_')[1]}"
-                if failure_id in self.segments:
-                    # Link both segments to each other
-                    segment.oracle_pair_id = failure_id
-                    self.segments[failure_id].oracle_pair_id = segment_id 
+                try:
+                    failure_id = f"Failure_{segment_id.split('Oracle_')[1]}"
+                    if failure_id in self.segments:
+                        # Link both segments to each other
+                        segment.oracle_pair_id = failure_id
+                        self.segments[failure_id].oracle_pair_id = segment_id
+                        print(f"Linked oracle {segment_id} with failure {failure_id}")
+                    else:
+                        logger.warning(f"Failure segment {failure_id} not found for oracle {segment_id}")
+                except IndexError:
+                    logger.error(f"Invalid Oracle segment ID format: {segment_id}")

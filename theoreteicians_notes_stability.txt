@@ -1,0 +1,521 @@
+# Theory to Implementation: Narrative Stability Analysis
+## Case Study: Phase Space Stability Measurement
+
+### 1. Mathematical Foundation
+```
+S(r,g|C,M) = exp(-β|D(r,g,C,M)|) × ∏ᵢ cos(θᵢ(t) - θc(t))
+```
+
+This stability function combines:
+- Distance-based coherence: `exp(-β|D|)`
+- Phase alignment: `cos(θᵢ(t) - θc(t))`
+- Memory resonance: `∏ᵢ` across relevant memories
+
+### 2. Reference Implementation
+
+```python
+from dataclasses import dataclass
+from typing import List, Dict, Optional
+import numpy as np
+from sentence_transformers import SentenceTransformer
+
+@dataclass
+class NarrativeContext:
+    current_text: str
+    canon_embedding: np.ndarray
+    memory_embeddings: Dict[str, np.ndarray]
+    reference_points: List[np.ndarray]
+    
+class StabilityAnalyzer:
+    def __init__(self, 
+                 model_name: str = 'all-mpnet-base-v2',
+                 beta: float = 1.0,
+                 memory_weight: float = 0.3):
+        """
+        Args:
+            model_name: Embedding model to use
+            beta: Distance sensitivity (from exp(-β|D|))
+            memory_weight: Weight of memory resonance
+        """
+        self.embedding_model = SentenceTransformer(model_name)
+        self.beta = beta
+        self.memory_weight = memory_weight
+    
+    def compute_phase_coherence(self, 
+                              response_embedding: np.ndarray,
+                              context: NarrativeContext) -> float:
+        """
+        Implements exp(-β|D|) × cos(θ) component
+        """
+        # 1. Distance-based coherence
+        distance = np.linalg.norm(response_embedding - context.canon_embedding)
+        coherence = np.exp(-self.beta * distance)
+        
+        # 2. Phase alignment using three-point normalization
+        angles = []
+        for ref_point in context.reference_points:
+            theta = self._compute_normalized_angle(
+                context.canon_embedding - ref_point,
+                response_embedding - ref_point
+            )
+            angles.append(np.cos(theta))
+        
+        phase_alignment = np.mean(angles)
+        
+        return coherence * phase_alignment
+    
+    def _compute_normalized_angle(self, v1: np.ndarray, v2: np.ndarray) -> float:
+        """
+        Implements θ_normalized = arccos((p₁-p₂)·(p₃-p₂)/(|p₁-p₂||p₃-p₂|))
+        """
+        dot_product = np.dot(v1, v2)
+        norms = np.linalg.norm(v1) * np.linalg.norm(v2)
+        cos_theta = dot_product / (norms + 1e-8)  # Prevent division by zero
+        return np.arccos(np.clip(cos_theta, -1.0, 1.0))
+    
+    def compute_memory_resonance(self,
+                               response_embedding: np.ndarray,
+                               context: NarrativeContext) -> float:
+        """
+        Implements ∏ᵢ resonance component
+        """
+        resonances = []
+        for memory_embed in context.memory_embeddings.values():
+            # Compute similarity and phase alignment
+            similarity = np.dot(response_embedding, memory_embed) / (
+                np.linalg.norm(response_embedding) * np.linalg.norm(memory_embed)
+            )
+            theta = self._compute_normalized_angle(
+                response_embedding,
+                memory_embed
+            )
+            resonance = similarity * np.cos(theta)
+            resonances.append(resonance)
+            
+        # Use geometric mean to implement product
+        if resonances:
+            return np.exp(np.mean(np.log(np.abs(resonances) + 1e-8)))
+        return 1.0
+    
+    def measure_stability(self,
+                        response: str,
+                        context: NarrativeContext) -> Dict[str, float]:
+        """
+        Complete stability measurement combining all components
+        """
+        # Get response embedding
+        response_embedding = self.embedding_model.encode(response)
+        
+        # Compute components
+        phase_coherence = self.compute_phase_coherence(
+            response_embedding, context)
+        
+        memory_resonance = self.compute_memory_resonance(
+            response_embedding, context)
+        
+        # Combine using weighted geometric mean
+        stability = np.power(
+            phase_coherence,
+            1 - self.memory_weight
+        ) * np.power(
+            memory_resonance,
+            self.memory_weight
+        )
+        
+        return {
+            'total_stability': stability,
+            'phase_coherence': phase_coherence,
+            'memory_resonance': memory_resonance
+        }
+
+# Example Usage
+if __name__ == "__main__":
+    # Initialize analyzer
+    analyzer = StabilityAnalyzer(beta=1.0, memory_weight=0.3)
+    
+    # Create sample context
+    context = NarrativeContext(
+        current_text="The sun was bright and shone through a window...",
+        canon_embedding=analyzer.embedding_model.encode(
+            "The sun was bright and shone through a window..."),
+        memory_embeddings={
+            "memory1": analyzer.embedding_model.encode(
+                "She laughed, joy shining in her eyes...")
+        },
+        reference_points=[
+            analyzer.embedding_model.encode("mama"),
+            analyzer.embedding_model.encode(
+                "fire hot burn me now")
+        ]
+    )
+    
+    # Test responses
+    test_responses = [
+        "mama",  # Oracle response
+        "The brightness fills me with joy",  # Valid continuation
+        "fire hot burn me now",  # Failure response
+    ]
+    
+    for response in test_responses:
+        stability = analyzer.measure_stability(response, context)
+        print(f"\nResponse: {response}")
+        print(f"Stability measurements: {stability}")
+```
+
+### 3. Validation Tests
+
+```python
+def test_stability_analyzer():
+    analyzer = StabilityAnalyzer()
+    
+    # Test Case 1: Oracle Response
+    stability_oracle = analyzer.measure_stability("mama", context)
+    assert stability_oracle['total_stability'] > 0.8, "Oracle response should have high stability"
+    
+    # Test Case 2: Failure Response
+    stability_failure = analyzer.measure_stability("fire hot burn me now", context)
+    assert stability_failure['total_stability'] < 0.3, "Failure response should have low stability"
+    
+    # Test Case 3: Phase Transition
+    response_sequence = [
+        "The sun feels warm",
+        "The light seems wrong",
+        "Why can't I see the source?",
+        "The physics here make no sense"
+    ]
+    stabilities = [analyzer.measure_stability(r, context)['total_stability'] 
+                  for r in response_sequence]
+    assert all(s1 > s2 for s1, s2 in zip(stabilities, stabilities[1:])), \
+        "Stability should decrease as narrative approaches glitch"
+```
+
+### 4. Parameter Tuning Framework
+
+```python
+def optimize_parameters(
+    training_data: List[Tuple[str, str, float]],
+    param_ranges: Dict[str, List[float]]
+) -> Dict[str, float]:
+    """
+    Grid search over parameter space with cross-validation
+    """
+    best_params = {}
+    best_score = float('-inf')
+    
+    for beta in param_ranges['beta']:
+        for memory_weight in param_ranges['memory_weight']:
+            analyzer = StabilityAnalyzer(
+                beta=beta,
+                memory_weight=memory_weight
+            )
+            
+            score = evaluate_parameters(analyzer, training_data)
+            
+            if score > best_score:
+                best_score = score
+                best_params = {
+                    'beta': beta,
+                    'memory_weight': memory_weight
+                }
+    
+    return best_params
+```
+
+# Narrative Component Implementations
+
+## 1. Memory Trigger Detection
+
+### 1.1 Mathematical Foundation
+```
+Memory resonance at time t:
+μ(r,M,t) = ∑ᵢ wᵢ × exp(-λ|t-tᵢ|) × ρ(r,mᵢ)
+
+Trigger condition:
+T(r,M) = σ(μ(r,M,t) - μ_threshold)
+where σ is activation function
+```
+
+### 1.2 Implementation
+
+```python
+from dataclasses import dataclass
+from typing import List, Dict, Optional, Set
+import numpy as np
+from scipy.special import softmax
+
+@dataclass
+class Memory:
+    id: str
+    content: str
+    triggers: List[str]
+    timestamp: float
+    embedding: np.ndarray
+    weight: float = 1.0
+
+@dataclass
+class TriggerResult:
+    triggered: bool
+    memory_id: Optional[str]
+    confidence: float
+    resonance_scores: Dict[str, float]
+
+class MemoryTriggerAnalyzer:
+    def __init__(self,
+                 embedding_model,
+                 decay_rate: float = 0.1,
+                 trigger_threshold: float = 0.75,
+                 semantic_weight: float = 0.6,
+                 explicit_weight: float = 0.4):
+        self.embedding_model = embedding_model
+        self.decay_rate = decay_rate
+        self.trigger_threshold = trigger_threshold
+        self.semantic_weight = semantic_weight
+        self.explicit_weight = explicit_weight
+        
+    def compute_trigger_resonance(self,
+                                response: str,
+                                memory: Memory,
+                                current_time: float) -> float:
+        """
+        Compute resonance between response and memory including temporal decay
+        """
+        # Embed response
+        response_embedding = self.embedding_model.encode(response)
+        
+        # 1. Semantic Resonance
+        semantic_similarity = np.dot(response_embedding, memory.embedding) / (
+            np.linalg.norm(response_embedding) * np.linalg.norm(memory.embedding)
+        )
+        
+        # 2. Explicit Trigger Matching
+        trigger_matches = self._compute_trigger_matches(response, memory.triggers)
+        
+        # 3. Temporal Decay
+        time_factor = np.exp(-self.decay_rate * abs(current_time - memory.timestamp))
+        
+        # Combine components
+        resonance = (
+            self.semantic_weight * semantic_similarity +
+            self.explicit_weight * trigger_matches
+        ) * time_factor * memory.weight
+        
+        return resonance
+    
+    def _compute_trigger_matches(self,
+                               response: str,
+                               triggers: List[str]) -> float:
+        """
+        Compute explicit trigger word matches
+        """
+        response_words = set(response.lower().split())
+        
+        match_scores = []
+        for trigger in triggers:
+            trigger_words = set(trigger.lower().split())
+            overlap = len(response_words & trigger_words)
+            coverage = overlap / len(trigger_words)
+            match_scores.append(coverage)
+        
+        return max(match_scores) if match_scores else 0.0
+    
+    def analyze_triggers(self,
+                        response: str,
+                        memories: List[Memory],
+                        current_time: float) -> TriggerResult:
+        """
+        Analyze response for memory triggers
+        """
+        resonance_scores = {}
+        
+        for memory in memories:
+            resonance = self.compute_trigger_resonance(
+                response, memory, current_time)
+            resonance_scores[memory.id] = resonance
+        
+        # Find strongest trigger
+        if resonance_scores:
+            max_memory_id = max(resonance_scores.items(), 
+                              key=lambda x: x[1])[0]
+            max_resonance = resonance_scores[max_memory_id]
+            
+            triggered = max_resonance > self.trigger_threshold
+            
+            return TriggerResult(
+                triggered=triggered,
+                memory_id=max_memory_id if triggered else None,
+                confidence=max_resonance,
+                resonance_scores=resonance_scores
+            )
+        
+        return TriggerResult(
+            triggered=False,
+            memory_id=None,
+            confidence=0.0,
+            resonance_scores={}
+        )
+```
+
+## 2. Glitch Detection
+
+### 2.1 Mathematical Foundation
+```
+Glitch probability in phase space:
+P(glitch|r,C) = σ(∇S(r,C) · ∇S(r,C))
+
+Inconsistency measure:
+I(r,C) = ∑ᵢ wᵢ|⟨ψᵢ|H|ψc⟩|²
+where H is narrative Hamiltonian
+```
+
+### 2.2 Implementation
+
+```python
+@dataclass
+class GlitchCondition:
+    description: str
+    indicators: List[str]
+    embedding: np.ndarray
+    narrative_constraints: Dict[str, np.ndarray]
+
+@dataclass
+class GlitchResult:
+    detected: bool
+    confidence: float
+    violated_constraints: List[str]
+    inconsistency_measures: Dict[str, float]
+
+class GlitchDetector:
+    def __init__(self,
+                 embedding_model,
+                 coherence_threshold: float = 0.7,
+                 inconsistency_threshold: float = 0.6,
+                 min_constraint_violations: int = 2):
+        self.embedding_model = embedding_model
+        self.coherence_threshold = coherence_threshold
+        self.inconsistency_threshold = inconsistency_threshold
+        self.min_constraint_violations = min_constraint_violations
+        
+    def compute_narrative_consistency(self,
+                                    response: str,
+                                    context: Dict[str, np.ndarray]) -> Dict[str, float]:
+        """
+        Compute consistency with narrative constraints
+        """
+        response_embedding = self.embedding_model.encode(response)
+        
+        consistencies = {}
+        for constraint_name, constraint_embed in context.items():
+            consistency = np.dot(response_embedding, constraint_embed) / (
+                np.linalg.norm(response_embedding) * 
+                np.linalg.norm(constraint_embed)
+            )
+            consistencies[constraint_name] = consistency
+            
+        return consistencies
+    
+    def detect_glitch(self,
+                     response: str,
+                     glitch_condition: GlitchCondition,
+                     narrative_context: Dict[str, np.ndarray]) -> GlitchResult:
+        """
+        Detect narrative glitches based on consistency violations
+        """
+        # 1. Check basic coherence
+        response_embedding = self.embedding_model.encode(response)
+        basic_coherence = np.dot(response_embedding, glitch_condition.embedding) / (
+            np.linalg.norm(response_embedding) * 
+            np.linalg.norm(glitch_condition.embedding)
+        )
+        
+        # 2. Check narrative constraints
+        consistencies = self.compute_narrative_consistency(
+            response, glitch_condition.narrative_constraints)
+        
+        # 3. Identify violations
+        violated_constraints = [
+            constraint for constraint, score in consistencies.items()
+            if score < self.inconsistency_threshold
+        ]
+        
+        # 4. Compute glitch confidence
+        if len(violated_constraints) >= self.min_constraint_violations:
+            # Use violation pattern to compute confidence
+            violation_pattern = np.array([
+                1 - consistencies[c] for c in violated_constraints
+            ])
+            confidence = np.mean(violation_pattern) * basic_coherence
+        else:
+            confidence = 0.0
+        
+        return GlitchResult(
+            detected=confidence > self.coherence_threshold,
+            confidence=confidence,
+            violated_constraints=violated_constraints,
+            inconsistency_measures=consistencies
+        )
+
+    def analyze_narrative_stability(self,
+                                  response: str,
+                                  glitch_conditions: List[GlitchCondition],
+                                  narrative_context: Dict[str, np.ndarray]
+                                  ) -> List[GlitchResult]:
+        """
+        Analyze response for all potential glitch conditions
+        """
+        results = []
+        for condition in glitch_conditions:
+            result = self.detect_glitch(
+                response, condition, narrative_context)
+            results.append(result)
+            
+        return results
+```
+
+### 2.3 Integration Example
+
+```python
+class NarrativeAnalyzer:
+    def __init__(self,
+                 embedding_model,
+                 stability_analyzer: StabilityAnalyzer,
+                 memory_analyzer: MemoryTriggerAnalyzer,
+                 glitch_detector: GlitchDetector):
+        self.embedding_model = embedding_model
+        self.stability_analyzer = stability_analyzer
+        self.memory_analyzer = memory_analyzer
+        self.glitch_detector = glitch_detector
+        
+    def analyze_response(self,
+                        response: str,
+                        narrative_context: NarrativeContext,
+                        memories: List[Memory],
+                        glitch_conditions: List[GlitchCondition],
+                        current_time: float) -> Dict:
+        """
+        Complete narrative analysis
+        """
+        # 1. Check for memory triggers
+        memory_result = self.memory_analyzer.analyze_triggers(
+            response, memories, current_time)
+        
+        # 2. Check for glitches
+        glitch_results = self.glitch_detector.analyze_narrative_stability(
+            response, glitch_conditions, narrative_context.constraints)
+        
+        # 3. Measure overall stability
+        if not memory_result.triggered and not any(g.detected for g in glitch_results):
+            stability = self.stability_analyzer.measure_stability(
+                response, narrative_context)
+        else:
+            stability = None
+            
+        return {
+            'memory_trigger': memory_result,
+            'glitch_detection': glitch_results,
+            'stability': stability
+        }
+```
+
+*steps back from board, adjusts glasses*
+
+The glitch detection's narrative constraint system might need more development to handle complex narrative inconsistencies.

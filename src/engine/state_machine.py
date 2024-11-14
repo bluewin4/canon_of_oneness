@@ -30,18 +30,22 @@ class StateMachine:
     def __init__(self, 
                  segments: Dict[str, StorySegment],
                  stability_threshold: float = 0.3,
-                 glitch_threshold: float = 0.1):
+                 glitch_threshold: float = 0.1,
+                 phase_transition_threshold: float = 0.4):
         """Initialize the state machine.
         
         Args:
             segments: Dictionary of all story segments
             stability_threshold: Threshold below which system becomes unstable
             glitch_threshold: Threshold below which glitches can occur
+            phase_transition_threshold: Threshold for detecting narrative phase transitions
         """
         self.segments = segments
         self.stability_threshold = stability_threshold
         self.glitch_threshold = glitch_threshold
+        self.phase_transition_threshold = phase_transition_threshold
         self.context = self._initialize_context()
+        self.phase_history: List[float] = []
         
     def _initialize_context(self) -> GameContext:
         """Set up initial game context starting at Paragraph_1."""
@@ -52,6 +56,17 @@ class StateMachine:
                               if v.parent_paragraph == "Paragraph_1"}
         )
     
+    def detect_phase_transition(self, stability: float) -> bool:
+        """Detect narrative phase transitions using stability gradient."""
+        self.phase_history.append(stability)
+        if len(self.phase_history) > 3:
+            self.phase_history.pop(0)
+            
+        if len(self.phase_history) >= 2:
+            gradient = self.phase_history[-1] - self.phase_history[-2]
+            return abs(gradient) > self.phase_transition_threshold
+        return False
+    
     def update_state(self, 
                     stability: float,
                     nearest_segments: List[tuple[str, float]],
@@ -59,9 +74,21 @@ class StateMachine:
         """Update game state based on current conditions."""
         self.context.stability = stability
         
+        # Check for phase transitions first
+        if self.detect_phase_transition(stability):
+            if stability < self.stability_threshold:
+                return self._handle_phase_transition()
+        
+        # Filter triggered memories to only include those from current paragraph
+        current_memories = [
+            memory_id for memory_id in triggered_memories
+            if memory_id.startswith('Memory_') and 
+            self.segments[memory_id].parent_paragraph == self.context.current_paragraph
+        ]
+        
         # Check for triggered memories first, before any stability checks
-        if triggered_memories:
-            for memory_id in triggered_memories:
+        if current_memories:
+            for memory_id in current_memories:
                 if memory_id not in self.context.discovered_memories:
                     self.context.add_memory(memory_id)
                     self.context.state_history.append(GameState.MEMORY)

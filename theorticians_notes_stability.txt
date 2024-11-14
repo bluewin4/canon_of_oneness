@@ -1,0 +1,293 @@
+# Mathematical Foundations for Narrative Stability Analysis
+
+## 1. Theoretical Framework
+
+### 1.1 Core Spaces
+We operate in three interconnected spaces:
+```
+I: Information Space (raw narrative content)
+U: Understanding Space (integrated narrative knowledge)
+P: Platonic Truth Space (objective story constraints)
+
+Key Mappings:
+T(I → U): Information to Understanding transformation
+φ: U → P: Understanding to Truth mapping
+```
+
+### 1.2 Understanding Function
+The core transformation of narrative information is governed by:
+```
+f_u(I_i, I_tot, t) = γI_i × sign(I_i, I_tot) × [1 + ln(1 + I_tot)] × exp(-λI_tot) × ∑ⱼ ρ(I_i, I_j, t) × K(t-t₀)
+
+Where:
+γI_i: Base information value
+sign(I_i, I_tot): Direction of impact
+ρ(I_i, I_j, t): Information correlation
+K(t-t₀): Temporal kernel
+```
+
+### 1.3 Phase Space Evolution
+```
+ψ(narrative) = ∑ᵢ Aᵢ(t)ψᵢ(x)exp(-iωᵢt)
+
+Where:
+Aᵢ(t): Time-dependent amplitudes
+ψᵢ(x): Basis states (story elements)
+ωᵢ: Natural frequencies (story beats)
+```
+
+## 2. Implementation Mapping
+
+### 2.1 Stability Measurement
+The theoretical stability function:
+```
+S(r,g|C,M) = exp(-β|D(r,g,C,M)|) × ∏ᵢ cos(θᵢ(t) - θc(t))
+```
+Maps to implementation as:
+```python
+def compute_stability(response, context):
+    # Phase coherence (local structure)
+    phase_coherence = exp(-beta * semantic_distance(response, context.canon))
+    
+    # Memory resonance (global context)
+    memory_resonance = compute_resonance_product(response, context.memories)
+    
+    # Non-linear combination preserving phase space properties
+    stability = phase_coherence * memory_resonance
+    return stability
+```
+
+### 2.2 Three-Point Normalization
+The normalized angle calculation:
+```
+θ_normalized = arccos((p₁-p₂)·(p₃-p₂)/(|p₁-p₂||p₃-p₂|))
+```
+Applied to narrative embeddings:
+```python
+def compute_normalized_angle(canon_embed, response_embed, reference_embed):
+    v1 = canon_embed - reference_embed
+    v2 = response_embed - reference_embed
+    cos_theta = dot(v1, v2) / (norm(v1) * norm(v2))
+    return arccos(cos_theta)
+```
+
+### 2.3 Memory Resonance
+Memory interaction from phase space:
+```
+μ(r,M) = ∑ᵢ wᵢ × exp(-λ|t-tᵢ|) × ρ(r,mᵢ)
+```
+Implemented as:
+```python
+def compute_memory_resonance(response, memories):
+    resonances = []
+    for memory in memories:
+        temporal_decay = exp(-decay_rate * time_difference(memory))
+        correlation = semantic_similarity(response, memory)
+        resonances.append(memory.weight * temporal_decay * correlation)
+    return sum(resonances)
+```
+
+## 3. Phase Transitions
+
+### 3.1 Glitch Detection
+Glitches represent phase transitions in narrative stability. Detection uses:
+```
+P(glitch|r,C) = σ(∇S(r,C) · ∇S(r,C))
+
+Where:
+∇S: Gradient of stability function
+σ: Activation function
+```
+
+### 3.2 Memory Triggers
+Memory triggers occur at resonance points where:
+```
+ω_response ≈ ω_memory ± δ
+
+Where:
+ω: Natural frequency in phase space
+δ: Allowable frequency band
+```
+
+## 4. Parameter Relationships
+
+### 4.1 Theoretical Constraints
+```
+Coherence threshold ≥ √(memory_trigger_threshold)
+glitch_sensitivity ∝ 1/stability_bandwidth
+temporal_decay ∝ exp(-λt)
+```
+
+### 4.2 Optimization Objectives
+```
+max E[S(r,C,M)] subject to:
+- P(false_trigger) < ε
+- P(missed_glitch) < δ
+- temporal_coherence > τ
+```
+
+## 5. Validation Framework
+
+### 5.1 Phase Space Metrics
+```
+1. Stability Distribution: P(S|C,M)
+2. Phase Coherence: ⟨cos(θ_r - θ_c)⟩
+3. Memory Resonance: ∑ᵢ |⟨r|mᵢ⟩|²
+4. Glitch Sensitivity: |∂S/∂g|
+```
+
+### 5.2 Experimental Design
+1. Measure phase space coverage
+2. Track stability transitions
+3. Analyze resonance patterns
+4. Validate glitch emergence
+
+## 6. Theoretical Limitations
+
+1. Phase space approximation
+2. Finite-dimensional embeddings
+3. Discrete time steps
+4. Linear approximations in resonance
+
+## 7. Future Directions
+
+1. Non-linear resonance models
+2. Quantum-inspired phase transitions
+3. Topological stability measures
+4. Dynamic parameter adaptation
+
+
+
+
+# Mathematical Framework for Narrative Phase Transitions and Stability
+
+## 1. Core Spaces and Mappings
+
+### 1.1 Fundamental Spaces
+We operate across three interconnected spaces:
+- Information Space (I): Raw narrative content
+- Understanding Space (U): Integrated narrative knowledge
+- Platonic Truth Space (P): Objective story constraints
+
+### 1.2 Key Mappings
+```
+T(I → U): Information to Understanding transformation
+φ: U → P: Understanding to Truth mapping
+```
+
+## 2. Information Transformation
+
+### 2.1 Understanding Function
+The core transformation of narrative information is governed by:
+```
+f_u(I_i, I_tot, t) = γI_i × sign(I_i, I_tot) × [1 + ln(1 + I_tot)] × exp(-λI_tot) × ∑ⱼ ρ(I_i, I_j, t) × K(t-t₀)
+
+Where:
+γI_i: Base information value
+sign(I_i, I_tot): Direction of impact
+ρ(I_i, I_j, t): Information correlation
+K(t-t₀): Temporal kernel
+```
+
+### 2.2 Phase Space Evolution
+```
+ψ(narrative) = ∑ᵢ Aᵢ(t)ψᵢ(x)exp(-iωᵢt)
+
+Where:
+Aᵢ(t): Time-dependent amplitudes
+ψᵢ(x): Basis states (story elements)
+ωᵢ: Natural frequencies (story beats)
+```
+
+## 3. Stability Analysis
+
+### 3.1 Robustness Metrics
+For a narrative phase p:
+```
+ρ_p: Robustness (resistance to perturbation)
+f_p: Frequency in narrative space
+k_ℓ: Set of possible sequences length ℓ
+
+Empirical relationship:
+ρ_p ≈ 1 + (log_k(f_p))/ℓ
+```
+
+### 3.2 Stability Function
+```
+S(r,g|C,M) = exp(-β|D(r,g,C,M)|) × ∏ᵢ cos(θᵢ(t) - θc(t))
+
+Where:
+r: Player response
+g: Generated continuation
+C: Canon
+M: Target memories
+θᵢ: Phase angles
+```
+
+## 4. Mutation Framework
+
+### 4.1 Mutation Classes
+For narrative transformation r → r_m:
+```
+Synonymous: 𝕀_r = 𝕀_r,m
+Missense: ∃ 𝕀_gain ⊆ 𝕀_r,m - (𝕀_r,m ∩ 𝕀_r)
+Nonsense: Corr(x_m) = x_corr
+```
+
+### 4.2 Phase Comparison via Three-Point Normalization
+```
+θ_normalized = arccos((p₁-p₂)·(p₃-p₂)/(|p₁-p₂||p₃-p₂|))
+
+Stability metric:
+∏ᵢ cos(θ_canon_i - θ_future_i)
+```
+
+## 5. Implementation Strategy
+
+### 5.1 Phase Extraction
+1. Compute normalized angles between narrative triplets
+2. Track evolution of phase relationships
+3. Calculate stability via coherence metrics
+
+### 5.2 Canon as Absorbing State
+- Treat canonical narrative as ground state
+- Measure deviations through phase differences
+- Track convergence to canon-like behavior
+
+### 5.3 Practical Computation
+1. Generate embedding triplets
+2. Apply three-point normalization
+3. Compare phase trajectories
+4. Evaluate stability bounds
+
+## 6. Research Questions
+
+### 6.1 Theoretical
+1. Optimal future step generation count
+2. Formal absorption properties of canon
+3. Relationship between local and global stability
+4. Definition of resonance bandwidth
+
+### 6.2 Computational
+1. Efficient phase difference calculation
+2. Handling of multiple valid branches
+3. Real-time stability assessment
+4. Optimization of three-point normalization
+
+## 7. Next Steps
+
+1. Implement basic phase calculator
+2. Test with simple narratives
+3. Validate against human judgment
+4. Extend to complex story structures
+
+## Notes
+This framework combines insights from quantum mechanics, information theory, and phase space analysis to create a robust system for analyzing narrative stability and evolution. The key innovation is treating narrative coherence as a resonance phenomenon while using phase information to track stability.
+
+The system should allow creative freedom within bounded phase regions while maintaining overall narrative coherence. Implementation focuses on efficient computation of phase differences and stability metrics.
+
+Would welcome collaboration on:
+- Mathematical refinement
+- Implementation optimization
+- Validation methods
+- Extension to other narrative systems

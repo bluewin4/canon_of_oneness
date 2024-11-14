@@ -4,9 +4,10 @@ from src.story.story_parser import StoryParser
 import numpy as np
 from rich.console import Console
 from rich.table import Table
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 import itertools
 import random
+from sklearn.metrics.pairwise import cosine_similarity
 
 class TestStoryValidation(unittest.TestCase):
     @classmethod
@@ -18,23 +19,24 @@ class TestStoryValidation(unittest.TestCase):
         cls.console = Console()
         
     def test_oracle_failure_pairs(self):
-        # Create results table
+        """Test that oracle and failure pairs have correct stability."""
         table = Table(title="Oracle/Failure Pair Analysis")
         table.add_column("Section", style="cyan")
         table.add_column("Oracle Stability", justify="right")
         table.add_column("Failure Stability", justify="right")
         table.add_column("Status", style="bold")
         
-        # Track overall results
         failures = []
         pairs = self._get_oracle_failure_pairs()
         
         for section_id, (oracle, failure) in pairs.items():
+            # Embed oracle and failure responses
             oracle_embedding = self.vector_engine.embed_response(oracle.content)
-            oracle_stability = self.vector_engine.calculate_stability(oracle_embedding)
-            
             failure_embedding = self.vector_engine.embed_response(failure.content)
-            failure_stability = self.vector_engine.calculate_stability(failure_embedding)
+            
+            # Calculate stability with specific segment IDs
+            oracle_stability = self.vector_engine.calculate_stability(oracle_embedding, segment_id=oracle.segment_id)
+            failure_stability = self.vector_engine.calculate_stability(failure_embedding, segment_id=failure.segment_id)
             
             # Validate and collect results
             status = []
@@ -42,11 +44,11 @@ class TestStoryValidation(unittest.TestCase):
                 status.append("❌ Oracle <= Failure")
                 failures.append(f"{section_id}: Oracle ({oracle_stability:.2f}) <= Failure ({failure_stability:.2f})")
             
-            if oracle_stability <= 0.5:
+            if oracle_stability <= self.vector_engine.oracle_threshold:
                 status.append("❌ Oracle too low")
                 failures.append(f"{section_id}: Oracle stability too low ({oracle_stability:.2f})")
                 
-            if failure_stability >= 0.3:
+            if failure_stability >= self.vector_engine.failure_threshold:
                 status.append("❌ Failure too high")
                 failures.append(f"{section_id}: Failure stability too high ({failure_stability:.2f})")
                 
@@ -72,11 +74,9 @@ class TestStoryValidation(unittest.TestCase):
         
         # If any failures, print summary and fail test
         if failures:
-            self.console.print("\n[red]Failed Validations:[/red]")
-            for failure in failures:
-                self.console.print(f"❌ {failure}")
+            self.console.print(f"\n[bold red]{len(failures)} validation(s) failed[/bold red]")
             self.fail(f"\n{len(failures)} validation(s) failed")
-    
+
     def test_memory_triggers(self):
         """Test that memory triggers are properly detected"""
         table = Table(title="Memory Trigger Analysis")
@@ -95,6 +95,12 @@ class TestStoryValidation(unittest.TestCase):
                     test_response = self._create_natural_response(trigger)
                     response_embedding = self.vector_engine.embed_response(test_response)
                     
+                    # Assert that the trigger_embedding exists
+                    self.assertIn(segment_id, self.vector_engine.trigger_embeddings, 
+                                  msg=f"Trigger embeddings missing for {segment_id}")
+                    self.assertIn(trigger, self.vector_engine.trigger_embeddings[segment_id],
+                                  msg=f"Specific trigger '{trigger}' missing in trigger_embeddings for {segment_id}")
+                    
                     # Get similarity score for debugging
                     similarity = self.vector_engine.calculate_trigger_similarity(
                         response_embedding,
@@ -102,6 +108,7 @@ class TestStoryValidation(unittest.TestCase):
                         trigger
                     )
                     
+                    # Trigger the memory if similarity above threshold
                     triggered_memories = self.vector_engine.check_memory_trigger(
                         response_embedding,
                         threshold=0.5  # Lower threshold for semantic matching
@@ -119,29 +126,15 @@ class TestStoryValidation(unittest.TestCase):
                     
                     if segment_id not in triggered_memories:
                         failures.append(f"{segment_id}: Failed to trigger with phrase '{trigger}' (similarity: {similarity:.3f})")
-        
+                        
         # Print results table
         self.console.print("\n")
         self.console.print(table)
         
         # If any failures, print summary and fail test
         if failures:
-            self.console.print("\n[red]Failed Memory Triggers:[/red]")
-            for failure in failures:
-                self.console.print(f"❌ {failure}")
+            self.console.print(f"\n[bold red]{len(failures)} memory trigger(s) failed[/bold red]")
             self.fail(f"\n{len(failures)} memory trigger(s) failed")
-    
-    def _get_oracle_failure_pairs(self):
-        pairs = {}
-        for segment_id, segment in self.segments.items():
-            if segment.segment_type == 'oracle' and segment.oracle_pair_id:
-                pairs[segment_id] = (segment, self.segments[segment.oracle_pair_id])
-        return pairs
-    
-    def _get_parent_paragraph(self, segment):
-        if not segment.parent_paragraph:
-            return None
-        return self.segments.get(segment.parent_paragraph)
     
     def _create_natural_response(self, trigger: str) -> str:
         """Create a more natural test response from a trigger phrase."""
@@ -153,6 +146,14 @@ class TestStoryValidation(unittest.TestCase):
             f"Let me tell you about {trigger}"
         ]
         return random.choice(templates)
+    
+    def _get_oracle_failure_pairs(self):
+        """Retrieve oracle and failure pairs."""
+        pairs = {}
+        for segment_id, segment in self.segments.items():
+            if segment.segment_type == 'oracle' and segment.oracle_pair_id:
+                pairs[segment_id] = (segment, self.segments.get(segment.oracle_pair_id))
+        return pairs
 
 class ParameterOptimizer(unittest.TestCase):
     @classmethod
@@ -227,11 +228,7 @@ class ParameterOptimizer(unittest.TestCase):
 
         if best_params is not None:
             # Update vector engine with best parameters
-            self.vector_engine.set_parameters(
-                oracle_threshold=best_params[0],
-                failure_threshold=best_params[1],
-                distance_multiplier=best_params[2]
-            )
+            self.vector_engine.set_parameters(**best_params)
             
             # Save parameters to a dedicated parameters file
             self.vector_engine.save_parameters("cache/parameters.json")
@@ -240,6 +237,7 @@ class ParameterOptimizer(unittest.TestCase):
             self.vector_engine.save_embeddings()
             
             self.console.print("\n[green]Best Parameters Found and Saved:[/green]")
+            # Print all optimized parameters
             self.console.print(f"Oracle Threshold: {best_params[0]:.3f}")
             self.console.print(f"Failure Threshold: {best_params[1]:.3f}")
             self.console.print(f"Distance Multiplier: {best_params[2]:.3f}")
