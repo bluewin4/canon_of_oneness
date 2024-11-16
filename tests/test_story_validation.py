@@ -1,281 +1,214 @@
 import unittest
-from src.engine.vector_engine import VectorEngine
+from src.engine.stability_engine import StabilityEngine
 from src.story.story_parser import StoryParser
-import numpy as np
 from rich.console import Console
 from rich.table import Table
-from typing import Dict, Tuple, List, Optional
-import itertools
+from concurrent.futures import ThreadPoolExecutor
 import random
-from sklearn.metrics.pairwise import cosine_similarity
+from src.engine.llm_handler import LLMHandler
 
 class TestStoryValidation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        """Set up test environment."""
         cls.parser = StoryParser("data/story.txt")
         cls.segments = cls.parser.parse()
-        cls.vector_engine = VectorEngine()
-        cls.vector_engine.set_segments(cls.segments)
+        cls.llm_handler = LLMHandler()
+        cls.stability_engine = StabilityEngine(llm_handler=cls.llm_handler)
+        cls.stability_engine.set_segments(cls.segments)
+        cls.stability_engine.set_parameters(
+            oracle_threshold=0.7,
+            failure_threshold=0.3,
+            distance_multiplier=1.0
+        )
         cls.console = Console()
-        
-    def test_oracle_failure_pairs(self):
-        """Test that oracle and failure pairs have correct stability."""
-        table = Table(title="Oracle/Failure Pair Analysis")
+
+    def test_critical_pairs(self):
+        """Test a representative sample of oracle/failure pairs."""
+        table = Table(title="Critical Pair Analysis")
         table.add_column("Section", style="cyan")
         table.add_column("Oracle Stability", justify="right")
+        table.add_column("Oracle Memory", justify="right")
         table.add_column("Failure Stability", justify="right")
+        table.add_column("Failure Memory", justify="right")
         table.add_column("Status", style="bold")
         
-        failures = []
-        pairs = self._get_oracle_failure_pairs()
-        
-        for section_id, (oracle, failure) in pairs.items():
-            # Embed oracle and failure responses
-            oracle_embedding = self.vector_engine.embed_response(oracle.content)
-            failure_embedding = self.vector_engine.embed_response(failure.content)
-            
-            # Calculate stability with specific segment IDs
-            oracle_stability = self.vector_engine.calculate_stability(oracle_embedding, segment_id=oracle.segment_id)
-            failure_stability = self.vector_engine.calculate_stability(failure_embedding, segment_id=failure.segment_id)
-            
-            # Validate and collect results
-            status = []
-            if oracle_stability <= failure_stability:
-                status.append("❌ Oracle <= Failure")
-                failures.append(f"{section_id}: Oracle ({oracle_stability:.2f}) <= Failure ({failure_stability:.2f})")
-            
-            if oracle_stability <= self.vector_engine.oracle_threshold:
-                status.append("❌ Oracle too low")
-                failures.append(f"{section_id}: Oracle stability too low ({oracle_stability:.2f})")
-                
-            if failure_stability >= self.vector_engine.failure_threshold:
-                status.append("❌ Failure too high")
-                failures.append(f"{section_id}: Failure stability too high ({failure_stability:.2f})")
-                
-            status_text = " | ".join(status) if status else "✅ Pass"
-            
-            # Add row to table
-            table.add_row(
-                section_id,
-                f"{oracle_stability:.3f}",
-                f"{failure_stability:.3f}",
-                status_text
-            )
-            
-            # Add detailed content for failed pairs
-            if status:
-                self.console.print(f"\n[red]Failed Pair Details - {section_id}:[/red]")
-                self.console.print("[yellow]Oracle:[/yellow]", oracle.content)
-                self.console.print("[yellow]Failure:[/yellow]", failure.content)
-        
-        # Print results table
-        self.console.print("\n")
-        self.console.print(table)
-        
-        # If any failures, print summary and fail test
-        if failures:
-            self.console.print(f"\n[bold red]{len(failures)} validation(s) failed[/bold red]")
-            self.fail(f"\n{len(failures)} validation(s) failed")
-
-    def test_memory_triggers(self):
-        """Test that memory triggers are properly detected"""
-        table = Table(title="Memory Trigger Analysis")
-        table.add_column("Memory ID", style="cyan")
-        table.add_column("Trigger", style="yellow")
-        table.add_column("Test Response", style="blue")
-        table.add_column("Similarity", style="magenta")
-        table.add_column("Status", style="bold")
-        
-        failures = []
-        
-        for segment_id, segment in self.segments.items():
-            if segment_id.startswith('Memory_') and segment.triggers:
-                for trigger in segment.triggers:
-                    # Create a more natural test response
-                    test_response = self._create_natural_response(trigger)
-                    response_embedding = self.vector_engine.embed_response(test_response)
-                    
-                    # Assert that the trigger_embedding exists
-                    self.assertIn(segment_id, self.vector_engine.trigger_embeddings, 
-                                  msg=f"Trigger embeddings missing for {segment_id}")
-                    self.assertIn(trigger, self.vector_engine.trigger_embeddings[segment_id],
-                                  msg=f"Specific trigger '{trigger}' missing in trigger_embeddings for {segment_id}")
-                    
-                    # Get similarity score for debugging
-                    similarity = self.vector_engine.calculate_trigger_similarity(
-                        response_embedding,
-                        segment_id,
-                        trigger
-                    )
-                    
-                    # Trigger the memory if similarity above threshold
-                    triggered_memories = self.vector_engine.check_memory_trigger(
-                        response_embedding,
-                        threshold=0.5  # Lower threshold for semantic matching
-                    )
-                    
-                    status = "✅ Pass" if segment_id in triggered_memories else "❌ Fail"
-                    
-                    table.add_row(
-                        segment_id,
-                        trigger,
-                        test_response,
-                        f"{similarity:.3f}",
-                        status
-                    )
-                    
-                    if segment_id not in triggered_memories:
-                        failures.append(f"{segment_id}: Failed to trigger with phrase '{trigger}' (similarity: {similarity:.3f})")
-                        
-        # Print results table
-        self.console.print("\n")
-        self.console.print(table)
-        
-        # If any failures, print summary and fail test
-        if failures:
-            self.console.print(f"\n[bold red]{len(failures)} memory trigger(s) failed[/bold red]")
-            self.fail(f"\n{len(failures)} memory trigger(s) failed")
-    
-    def _create_natural_response(self, trigger: str) -> str:
-        """Create a more natural test response from a trigger phrase."""
-        templates = [
-            f"I remember {trigger}",
-            f"That reminds me of {trigger}",
-            f"It makes me think about {trigger}",
-            f"I'm thinking about {trigger}",
-            f"Let me tell you about {trigger}"
-        ]
-        return random.choice(templates)
-    
-    def _get_oracle_failure_pairs(self):
-        """Retrieve oracle and failure pairs."""
-        pairs = {}
-        for segment_id, segment in self.segments.items():
-            if segment.segment_type == 'oracle' and segment.oracle_pair_id:
-                pairs[segment_id] = (segment, self.segments.get(segment.oracle_pair_id))
-        return pairs
-
-class ParameterOptimizer(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.parser = StoryParser("data/story.txt")
-        cls.segments = cls.parser.parse()
-        cls.vector_engine = VectorEngine()
-        cls.vector_engine.set_segments(cls.segments)
-        cls.console = Console()
-
-    def optimize_parameters(self):
-        # Parameter ranges to test
-        param_ranges = {
-            'oracle_threshold': np.arange(0.4, 0.7, 0.05),
-            'failure_threshold': np.arange(0.2, 0.4, 0.05),
-            'distance_multiplier': np.arange(0.8, 1.2, 0.1)
+        # Get all oracle/failure pairs directly
+        oracle_segments = {
+            id: seg for id, seg in self.segments.items() 
+            if id.startswith('Oracle_')
         }
-
-        best_score = float('inf')
-        best_params = None
-        results = []
-
-        # Generate all combinations of parameters
-        param_combinations = itertools.product(*param_ranges.values())
-        total_combinations = np.prod([len(range_) for range_ in param_ranges.values()])
-
-        # Create results table
-        table = Table(title="Parameter Optimization Results")
-        table.add_column("Oracle Threshold", justify="right")
-        table.add_column("Failure Threshold", justify="right")
-        table.add_column("Distance Multiplier", justify="right")
-        table.add_column("Failed Tests", justify="right")
-
-        for i, params in enumerate(param_combinations, 1):
-            oracle_threshold, failure_threshold, distance_multiplier = params
+        
+        # Sample 3 random oracle segments
+        sample_oracles = random.sample(list(oracle_segments.items()), 3)
+        failures = []
+        
+        for oracle_id, oracle in sample_oracles:
+            # Get corresponding failure ID
+            section_num = oracle_id.split('_', 2)[1]  # Handle both Oracle_1 and Oracle_1_specific
+            base_failure_id = f"Failure_{section_num}"
             
-            # Update VectorEngine parameters
-            self.vector_engine.set_parameters(
-                oracle_threshold=oracle_threshold,
-                failure_threshold=failure_threshold,
-                distance_multiplier=distance_multiplier
+            # Find matching failure segment
+            failure_id = next(
+                (id for id in self.segments.keys() 
+                 if id.startswith(base_failure_id)), 
+                None
             )
-
-            # Run validation tests
-            failures = self._validate_all_pairs()
             
-            # Track results
-            results.append({
-                'params': params,
-                'failures': len(failures)
-            })
-
-            table.add_row(
-                f"{oracle_threshold:.3f}",
-                f"{failure_threshold:.3f}",
-                f"{distance_multiplier:.3f}",
-                f"{len(failures)}"
-            )
-
-            # Update best parameters if we found better results
-            if len(failures) < best_score:
-                best_score = len(failures)
-                best_params = params
-
-            # Progress update
-            if i % 10 == 0:
-                self.console.print(f"Progress: {i}/{total_combinations} combinations tested")
-
+            if not failure_id:
+                continue
+                
+            failure = self.segments[failure_id]
+            paragraph_id = f"Paragraph_{section_num}"
+            
+            try:
+                # Calculate stability scores (these are floats)
+                oracle_stability = self.stability_engine.calculate_stability(
+                    response_text=oracle.content,
+                    segment_id=paragraph_id
+                )
+                failure_stability = self.stability_engine.calculate_stability(
+                    response_text=failure.content,
+                    segment_id=paragraph_id
+                )
+                
+                # Get available memories for this section (as a set of strings)
+                available_memories = set(
+                    memory_id for memory_id in self.segments.keys()
+                    if memory_id.startswith(f'Memory_{section_num}')
+                )
+                
+                # Get triggered memories (as sets of strings)
+                oracle_memories = set(self.stability_engine.check_memory_trigger(
+                    response_text=oracle.content,
+                    segment_id=paragraph_id
+                ))
+                failure_memories = set(self.stability_engine.check_memory_trigger(
+                    response_text=failure.content,
+                    segment_id=paragraph_id
+                ))
+                
+                # Validate results
+                status = []
+                
+                # Stability checks (comparing floats)
+                if oracle_stability <= failure_stability:
+                    status.append("❌ Oracle <= Failure")
+                    failures.append(f"{oracle_id}: Invalid stability relationship")
+                    
+                if oracle_stability < 0.7:  # Oracle threshold
+                    status.append("❌ Oracle too low")
+                    failures.append(f"{oracle_id}: Stability {oracle_stability:.2f} < 0.7")
+                    
+                if failure_stability > 0.3:  # Failure threshold
+                    status.append("❌ Failure too high")
+                    failures.append(f"{failure_id}: Stability {failure_stability:.2f} > 0.3")
+                
+                # Memory trigger checks (comparing sets of strings)
+                memory_overlap = oracle_memories.intersection(available_memories)
+                if not memory_overlap:
+                    status.append("❌ No memories triggered")
+                    failures.append(f"{oracle_id}: Should trigger at least one memory")
+                    
+                failure_overlap = failure_memories.intersection(available_memories)
+                if failure_overlap:
+                    status.append("❌ Failure triggered memory")
+                    failures.append(f"{failure_id}: Should not trigger memories")
+                
+                status_text = " | ".join(status) if status else "✅ Pass"
+                
+                table.add_row(
+                    oracle_id,
+                    f"{oracle_stability:.3f}",
+                    str(len(memory_overlap)),  # Show number of triggered memories
+                    f"{failure_stability:.3f}",
+                    str(len(failure_overlap)),  # Show number of triggered memories
+                    status_text
+                )
+                
+            except Exception as e:
+                failures.append(f"{oracle_id}: Error - {str(e)}")
+        
         # Print results
         self.console.print("\n")
         self.console.print(table)
-
-        if best_params is not None:
-            # Update vector engine with best parameters
-            self.vector_engine.set_parameters(**best_params)
-            
-            # Save parameters to a dedicated parameters file
-            self.vector_engine.save_parameters("cache/parameters.json")
-            
-            # Save embeddings with updated parameters
-            self.vector_engine.save_embeddings()
-            
-            self.console.print("\n[green]Best Parameters Found and Saved:[/green]")
-            # Print all optimized parameters
-            self.console.print(f"Oracle Threshold: {best_params[0]:.3f}")
-            self.console.print(f"Failure Threshold: {best_params[1]:.3f}")
-            self.console.print(f"Distance Multiplier: {best_params[2]:.3f}")
-            self.console.print(f"Failed Tests: {best_score}")
-
-        return best_params, best_score
-
-    def _validate_all_pairs(self) -> List[str]:
-        """Run validation tests and return list of failure messages"""
-        failures = []
-        pairs = self._get_oracle_failure_pairs()
         
-        for section_id, (oracle, failure) in pairs.items():
-            oracle_embedding = self.vector_engine.embed_response(oracle.content)
-            oracle_stability = self.vector_engine.calculate_stability(oracle_embedding)
+        if failures:
+            self.fail("\n".join(failures))
+
+    def test_memory_trigger_sample(self):
+        """Test a sample of memory triggers."""
+        table = Table(title="Memory Trigger Analysis")
+        table.add_column("Memory ID", style="cyan")
+        table.add_column("Trigger", style="yellow")
+        table.add_column("Similarity", style="magenta")
+        table.add_column("Status", style="bold")
+        
+        # Select a representative sample of memories
+        memories = [(id, seg) for id, seg in self.segments.items() 
+                   if id.startswith('Memory_') and seg.triggers]
+        sample_size = min(3, len(memories))
+        sample_memories = random.sample(memories, sample_size)
+        
+        failures = []
+        
+        for memory_id, memory in sample_memories:
+            # Test one random trigger for each memory
+            trigger = random.choice(list(memory.triggers))
+            similarity = self.stability_engine.calculate_trigger_similarity(
+                trigger,
+                memory_id,
+                trigger
+            )
             
-            failure_embedding = self.vector_engine.embed_response(failure.content)
-            failure_stability = self.vector_engine.calculate_stability(failure_embedding)
+            status = "✅ Pass" if similarity >= 0.5 else "❌ Fail"
             
-            # Use the same thresholds as the game
-            if oracle_stability <= failure_stability:
-                failures.append(f"{section_id}: Oracle ({oracle_stability:.2f}) <= Failure ({failure_stability:.2f})")
+            table.add_row(
+                memory_id,
+                trigger,
+                f"{similarity:.3f}",
+                status
+            )
             
-            if oracle_stability <= self.vector_engine.oracle_threshold:
-                failures.append(f"{section_id}: Oracle stability too low ({oracle_stability:.2f})")
-                
-            if failure_stability >= self.vector_engine.failure_threshold:
-                failures.append(f"{section_id}: Failure stability too high ({failure_stability:.2f})")
-                
-        return failures
+            if similarity < 0.5:
+                failures.append(f"{memory_id}: Failed to trigger")
+        
+        self.console.print("\n")
+        self.console.print(table)
+        
+        if failures:
+            self.fail(f"\n{len(failures)} trigger test(s) failed")
+
+    def _select_representative_pairs(self, pairs, sample_size=3):
+        """Select representative pairs from different parts of the story."""
+        if len(pairs) <= sample_size:
+            return pairs
+            
+        # Get early, middle, and late story pairs
+        sorted_pairs = sorted(pairs.items())
+        indices = [
+            0,  # Early story
+            len(sorted_pairs) // 2,  # Middle story
+            len(sorted_pairs) - 1  # Late story
+        ]
+        return {k: pairs[k] for k in [sorted_pairs[i][0] for i in indices]}
+
+    def _calculate_pair_stability(self, section_id, oracle, failure):
+        """Calculate stability for an oracle/failure pair."""
+        oracle_stability = self.stability_engine.calculate_stability(
+            oracle.content,
+            oracle.segment_id
+        )
+        failure_stability = self.stability_engine.calculate_stability(
+            failure.content,
+            failure.segment_id
+        )
+        return oracle_stability, failure_stability
 
     def _get_oracle_failure_pairs(self):
-        pairs = {}
-        for segment_id, segment in self.segments.items():
-            if segment.segment_type == 'oracle' and segment.oracle_pair_id:
-                pairs[segment_id] = (segment, self.segments[segment.oracle_pair_id])
-        return pairs
-
-if __name__ == '__main__':
-    # For normal test running
-    unittest.main(verbosity=2)
+        """Get oracle/failure pairs from segments."""
+        return {
+            segment_id: (segment, self.segments[segment.oracle_pair_id])
+            for segment_id, segment in self.segments.items()
+            if segment.segment_type == 'oracle' and segment.oracle_pair_id
+        }

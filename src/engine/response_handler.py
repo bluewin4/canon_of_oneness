@@ -5,6 +5,7 @@ from .vector_engine import VectorEngine
 from .state_machine import StateMachine, GameState
 import re
 from .llm_handler import LLMHandler
+from .stability_engine import StabilityEngine
 
 # Set the environment variable before other imports
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -38,6 +39,10 @@ class ResponseHandler:
             max_retries=3,
             retry_delay=1.0
         )
+        self.stability_engine = StabilityEngine(self.llm_handler)
+        self.stability_engine.set_segments(self.state_machine.segments)
+        self.previous_memories = set()
+        self.previous_glitches = set()
         
     def _clean_input(self, text: str) -> str:
         """Clean and normalize player input text.
@@ -63,21 +68,34 @@ class ResponseHandler:
             if validation_result is not True:
                 return self._create_invalid_response(validation_result)
             
-            # Generate embeddings and calculate metrics
-            response_embedding = self.vector_engine.embed_response(cleaned_input)
-            stability = self.vector_engine.calculate_stability(response_embedding)
-            nearest_segments = self.vector_engine.find_nearest_segments(response_embedding)
-            triggered_memories = self.vector_engine.check_memory_trigger(
-                response_embedding=response_embedding,
-                response_text=cleaned_input
+            # Calculate stability and check memories using current paragraph
+            current_paragraph = self.state_machine.context.current_paragraph
+            
+            # Use stability engine instead of vector engine
+            stability = self.stability_engine.calculate_stability(
+                response_text=cleaned_input,
+                segment_id=current_paragraph
             )
             
-            # Update vector position
-            self.vector_engine.update_position(response_embedding)
+            # Get triggered memories
+            triggered_memories = self.stability_engine.check_memory_trigger(
+                response_text=cleaned_input,
+                segment_id=current_paragraph
+            )
             
-            # Get previous stats for comparison
-            previous_memories = set(self.state_machine.context.discovered_memories)
-            previous_glitches = set(self.state_machine.context.triggered_glitches)
+            # Get nearby content through coherence calculation
+            nearest_segments = []
+            for segment_id, segment in self.state_machine.segments.items():
+                if segment_id.startswith('Paragraph_'):
+                    coherence = self.stability_engine.compute_coherence(
+                        response=cleaned_input,
+                        segment_id=segment_id
+                    )
+                    if coherence > 0.5:  # Only include relevant segments
+                        nearest_segments.append((segment_id, coherence))
+            
+            # Sort by coherence score
+            nearest_segments.sort(key=lambda x: x[1], reverse=True)
             
             # Update game state
             new_state, content = self.state_machine.update_state(
@@ -92,10 +110,14 @@ class ResponseHandler:
             current_memories = set(self.state_machine.context.discovered_memories)
             current_glitches = set(self.state_machine.context.triggered_glitches)
             
-            if len(current_memories) > len(previous_memories):
-                new_memory = (current_memories - previous_memories).pop()
-            if len(current_glitches) > len(previous_glitches):
-                new_glitch = (current_glitches - previous_glitches).pop()
+            if len(current_memories) > len(self.previous_memories):
+                new_memory = (current_memories - self.previous_memories).pop()
+            if len(current_glitches) > len(self.previous_glitches):
+                new_glitch = (current_glitches - self.previous_glitches).pop()
+            
+            # Update previous state for next comparison
+            self.previous_memories = current_memories
+            self.previous_glitches = current_glitches
             
             # Generate appropriate feedback message
             feedback_message = self._generate_feedback(

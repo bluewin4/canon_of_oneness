@@ -7,7 +7,12 @@ from typing import Dict, List, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from rich.logging import RichHandler
+import logging
+import re
 
+logger = logging.getLogger(__name__)
+    
 load_dotenv()
 
 class LLMCacheEntry:
@@ -226,3 +231,224 @@ Generate a response paragraph:"""
         for segment_id, relevance in segments:
             formatted.append(f"- {segment_id} (relevance: {relevance:.2f})")
         return "\n".join(formatted) 
+    
+    def calculate_stability(self, current_paragraph: str, player_input: str, available_memories: List[str]) -> float:
+        """Calculate narrative stability using Claude's analysis."""
+        if not player_input.strip():
+            return 0.0
+        
+        prompt = f"""You are evaluating a player's response in an interactive narrative. Your task is to determine:
+1. How well it maintains narrative coherence
+2. How likely it is to lead to discovering available memories
+
+Current story context:
+{current_paragraph}
+
+Available memories that could be discovered:
+{chr(10).join('- ' + memory for memory in available_memories)}
+
+Player response:
+{player_input}
+
+Scoring criteria (0.0-1.0):
+OPTIMAL (0.7-1.0):
+- Response shows deep understanding of context
+- Naturally leads to discovering available memories
+- Strong thematic alignment
+
+STABLE (0.5-0.6):
+- Response maintains narrative coherence
+- May indirectly relate to memories
+- Good thematic fit
+
+UNSTABLE (0.3-0.4):
+- Limited connection to context
+- Unlikely to trigger memories
+- Weak thematic alignment
+
+DANGEROUS (0.1-0.2):
+- Breaks narrative flow
+- Actively prevents memory discovery
+- Poor thematic fit
+
+CRITICAL (0.0-0.1):
+- Completely disconnected from narrative
+- Makes memory discovery impossible
+- No thematic relevance
+
+First, analyze how the response relates to the context and available memories.
+Then on a new line, output ONLY a number between 0.0 and 1.0 that represents the stability score."""
+
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=300,
+                temperature=0.2,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            # Extract score from response
+            response_text = response.content[0].text.strip()
+            lines = [line for line in response_text.split('\n') if line.strip()]
+            score_line = lines[-1]
+            
+            try:
+                score = float(score_line)
+                return max(0.0, min(1.0, score))
+            except ValueError:
+                matches = re.findall(r'(\d*\.?\d+)', score_line)
+                if matches:
+                    return max(0.0, min(1.0, float(matches[0])))
+                logger.warning(f"Could not extract score from: {score_line}")
+                return 0.0
+                
+        except Exception as e:
+            logger.error(f"Error calculating stability: {e}")
+            return 0.0
+    
+    def calculate_memory_trigger(self, 
+                                current_paragraph: str,
+                                response_text: str, 
+                                memory_text: str, 
+                                triggers: List[str]) -> float:
+        """Calculate if response should trigger a memory."""
+        # Handle empty input
+        if not response_text.strip():
+            return 0.0
+        
+        prompt = f"""Determine if this response should trigger a memory.
+
+Initial narrative context:
+{current_paragraph}
+
+Memory:
+{memory_text}
+
+Relevant trigger phrases:
+{', '.join(triggers)}
+
+Player response:
+{response_text}
+
+Consider:
+1. Semantic similarity to memory content
+2. Presence of trigger phrases or similar concepts
+3. Narrative relevance
+
+Output a single number between 0 and 1 representing trigger probability, followed by a brief explanation.
+Any value of >0.8 should be considered a trigger."""
+
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=100,
+                temperature=0.2,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            trigger_score = self._extract_float_from_response(response.content[0].text.strip())
+            return max(0.0, min(1.0, trigger_score))
+            
+        except Exception as e:
+            logger.error(f"Error calculating memory trigger: {e}")
+            return 0.0
+    
+    def _extract_float_from_response(self, response_text: str) -> float:
+        """Extract the first float value from LLM response."""
+        # Handle empty or invalid response
+        if not response_text or not isinstance(response_text, str):
+            return 0.0
+        
+        # Find the first number in the response
+        matches = re.findall(r'(\d*\.?\d+)', response_text)
+        if matches:
+            try:
+                value = float(matches[0])
+                # Ensure value is between 0 and 1
+                return max(0.0, min(1.0, value))
+            except ValueError:
+                logger.warning(f"Could not convert matched value to float: {matches[0]}")
+                return 0.0
+            
+        logger.warning(f"No float value found in response: {response_text[:100]}...")
+        return 0.0
+    
+    def calculate_coherence(self,
+                          current_paragraph: str,
+                          response_text: str,
+                          use_cache: bool = True) -> float:
+        """Calculate narrative coherence between paragraph and response.
+        
+        Args:
+            current_paragraph: The current story paragraph
+            response_text: Player's response text
+            use_cache: Whether to use response caching
+            
+        Returns:
+            Float between 0 and 1 representing coherence
+        """
+        # Generate cache key
+        cache_key = self._generate_cache_key(
+            "coherence",
+            current_paragraph,
+            response_text
+        )
+        
+        # Check cache if enabled
+        if use_cache:
+            cached_response = self._get_cached_response(cache_key)
+            if cached_response:
+                return float(cached_response)
+        
+        # Create coherence analysis prompt
+        prompt = f"""Analyze the narrative coherence between these two texts and provide a single number between 0 and 1, where:
+- 1.0 means perfect narrative coherence and thematic alignment
+- 0.0 means complete narrative disconnect
+
+Story context:
+{current_paragraph}
+
+Response:
+{response_text}
+
+Consider:
+1. Thematic consistency
+2. Narrative flow
+3. Logical connection
+4. Contextual relevance
+
+Output only a single number between 0 and 1:"""
+
+        # Generate response with retry logic
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.messages.create(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=10,
+                    temperature=0.2,
+                    messages=[{
+                        "role": "user",
+                        "content": prompt
+                    }]
+                )
+                
+                # Extract coherence value
+                coherence = float(response.content[0].text.strip())
+                
+                # Validate and clip coherence value
+                coherence = max(0.0, min(1.0, coherence))
+                
+                # Cache successful response
+                self._cache_response(cache_key, str(coherence))
+                return coherence
+                
+            except Exception as e:
+                # Handle errors using existing retry logic
+                if isinstance(e, RateLimitError):
+                    if attempt == self.max_retries - 1:
+                        raise
+                    time.sleep(self.retry_delay * (attempt + 1))
+                else:
+                    if attempt == self.max_retries - 1:
+                        return 0.0
+                    time.sleep(self.retry_delay)

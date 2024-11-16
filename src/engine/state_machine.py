@@ -67,6 +67,14 @@ class StateMachine:
             return abs(gradient) > self.phase_transition_threshold
         return False
     
+    def _handle_phase_transition(self) -> tuple[GameState, str]:
+        """Handle narrative phase transitions when stability drops rapidly."""
+        self.context.state_history.append(GameState.UNSTABLE)
+        return GameState.UNSTABLE, (
+            "The narrative structure is shifting dramatically...\n\n" +
+            self.segments[self.context.current_paragraph].content
+        )
+    
     def update_state(self, 
                     stability: float,
                     nearest_segments: List[tuple[str, float]],
@@ -105,7 +113,7 @@ class StateMachine:
         
         # Rest of the existing state update logic...
         if stability < self.glitch_threshold:
-            if random.random() < 0.7:
+            if random.random() < 0.6:
                 available_glitches = [
                     seg_id for seg_id, seg in self.context.available_segments.items()
                     if seg_id.startswith("Glitch_") and seg_id not in self.context.triggered_glitches
