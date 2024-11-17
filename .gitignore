@@ -99,4 +99,4 @@ dmypy.json
 .pyre/
 
 # Cache
-cache/embeddings.npy 
+cache/**
