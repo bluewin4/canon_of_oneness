@@ -5,6 +5,9 @@ A dynamic interactive fiction engine that uses AI embeddings to create a respons
 Made a new branch that has a brain-dead implementation. I'm working on an evolutionary Kodoku to get a better metric for the embedding stuff later. In the meantime just use this branch and install the requirements, make a .env with your anthropic key and run main.py
 
 feature/simple-llm-stability is the branch
+using python
+3.10.15
+
 
 ## Overview
 
