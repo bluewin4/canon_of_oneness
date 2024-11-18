@@ -6,4 +6,6 @@ python-dotenv>=0.19.0
 pytest>=7.0.0
 pytest-cov>=4.0.0
 pytest-mock>=3.10.0
-    
+aijson-core^=0.2.2
+aijson-utils^=0.1.5
+aijson-meta^=0.1.9
