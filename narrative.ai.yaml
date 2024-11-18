@@ -63,22 +63,12 @@ flow:
           - No thematic relevance
   
           First, analyze how the response relates to the context and available memories.
-
-  calculate_stability:
-    action: llm
-    model:
-      model: gpt-4o-mini
-      temperature: 0.2
-      max_output_tokens: 10
-    prompt:
-      - link: ask_about_stability
-      - Output a number between 0.0 and 1.0 that represents the stability score.
-    output_schema:
-      stability:
-        type: number
+          Assign a number between 0.0 and 1.0 that represents the stability score on a new line.
 
   stability:
-    lambda: calculate_stability.data.stability
+    action: extract_stability_score
+    response:
+      link: ask_about_stability
     
   new_temp:
     lambda: 0.3 + ((1 - stability) * 0.7)

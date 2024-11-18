@@ -28,6 +28,7 @@ class ResponseHandler:
         self.min_response_length = min_response_length
         self.max_response_length = max_response_length
         self.discovered_memories = defaultdict(list)
+        self.memory_history = defaultdict(list)
         # self.previous_glitches = set()
 
         self._flow = Flow.from_file('narrative.ai.yaml')
@@ -165,6 +166,7 @@ class ResponseHandler:
                 does_trigger = val
                 if does_trigger:
                     para_memories.append(memory)
+                    self.memory_history[self.current_index] = para_memories.copy()
                     
                     memory_panel = self._create_memory_panel(memory)
                     memory_panel_group.append(memory_panel)
@@ -174,9 +176,25 @@ class ResponseHandler:
             elif coro_id == "stability":
                 assert isinstance(val, float)
                 stability = val
+                
+                # Handle critical stability first
+                if stability < 0.1:
+                    stability_panel_group.clear()
+                    stability_panel_group.append(
+                        self._create_stability_status_panel(stability)
+                    )
+                    self._render()
+                    self._handle_critical_stability()
+                    return  # Exit early to prevent further processing
+                
+                # Normal stability handling
                 stability_panel_group.clear()
-                stability_panel_group.append(self._create_stability_status_panel(stability))
-                stability_panel_group.append(self._create_stability_feedback_panel(stability))
+                stability_panel_group.append(
+                    self._create_stability_status_panel(stability)
+                )
+                stability_panel_group.append(
+                    self._create_stability_feedback_panel(stability)
+                )
             elif coro_id == "response":
                 assert isinstance(val, str)
 
@@ -495,3 +513,39 @@ class ResponseHandler:
     #         can_progress=False,
     #         message=message
     #     )
+
+    def _handle_critical_stability(self) -> None:
+        """Handle critical stability by showing glitches and reverting paragraph."""
+        current_para = self.story.get_paragraph(self.current_index)
+        if not current_para or not current_para.glitches:
+            return
+
+        # Show all glitches for dramatic effect
+        glitch_panel_group = []
+        for glitch in current_para.glitches:
+            panel = Panel(
+                glitch.content,
+                style="red bold blink",
+                border_style="red",
+                box=box.HEAVY
+            )
+            glitch_panel_group.append(panel)
+        
+        # Add glitch panels to display
+        self.panels.append(glitch_panel_group)
+        self._render()
+
+        # Pause for dramatic effect
+        import time
+        time.sleep(2)
+
+        # Revert to previous paragraph
+        if self.current_index > 0:
+            self.current_index -= 1
+            self.reset_panels()
+            self.panels.append(Panel(
+                "[CRITICAL INSTABILITY - REVERTING TO PREVIOUS STABLE STATE]",
+                style="red bold blink"
+            ))
+            self.panels.append(self._create_current_paragraph_panel())
+            self._render()
