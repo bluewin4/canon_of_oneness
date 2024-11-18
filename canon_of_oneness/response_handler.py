@@ -75,7 +75,7 @@ class ResponseHandler:
         if self.current_index > 0:
             self.panels.append(Panel("[Progressing to next section...]", style="green bold"))
         else:
-            self.panels.append(self._create_help_panel())
+            self.panels.append(self._create_intro_panel())
 
         self.panels.append(self._create_current_paragraph_panel())
 
@@ -357,6 +357,16 @@ class ResponseHandler:
         - Pay attention to narrative cues
         """
         return Panel(help_text, title_align="left", style="cyan")
+    
+    def _create_intro_panel(self) -> Panel:
+        intro = """
+        Welcome to the Interactive Story System
+        =====================================
+        Type 'help' for a list of commands.
+        Type your responses to progress through the story.
+        Type 'quit' to exit.
+        """
+        return Panel(intro, title_align="left")
 
         # def _clean_input(self, text: str) -> str:
     #     """Clean and normalize player input text.

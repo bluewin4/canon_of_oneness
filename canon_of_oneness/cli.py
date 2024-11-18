@@ -6,13 +6,6 @@ from .response_handler import ResponseHandler
 from .story import Story
 
 class GameCLI(cmd.Cmd):
-    intro = """
-    Welcome to the Interactive Story System
-    =====================================
-    Type 'help' for a list of commands.
-    Type your responses to progress through the story.
-    Type 'quit' to exit.
-    """
     prompt = "\n> "
 
     def __init__(self, story: Story):
