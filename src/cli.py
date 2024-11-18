@@ -2,8 +2,8 @@ import asyncio
 import cmd
 import io
 from rich.console import Console
-from ..engine.response_handler import ResponseHandler
-from ..models.story import Story
+from .response_handler import ResponseHandler
+from .story import Story
 
 class GameCLI(cmd.Cmd):
     intro = """

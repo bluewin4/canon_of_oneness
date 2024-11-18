@@ -8,7 +8,7 @@ from aijson import Flow
 from aijson.utils.async_utils import merge_iterators
 from rich import box
 
-from ..models.story import Memory, Story
+from .story import Memory, Story
 
 # Set the environment variable before other imports
 os.environ["TOKENIZERS_PARALLELISM"] = "false"

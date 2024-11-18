@@ -2,8 +2,8 @@ from pathlib import Path
 import sys
 from dotenv import load_dotenv
 import tomli
-from src.models.story import Story
-from src.interface.cli import GameCLI
+from src.story import Story
+from src.cli import GameCLI
 
 load_dotenv()
 
