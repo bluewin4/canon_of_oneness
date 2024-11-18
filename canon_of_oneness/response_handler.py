@@ -19,7 +19,7 @@ class ResponseHandler:
                  console: Console,
                  story: Story,
                  stdout_buffer: io.StringIO,
-                 min_response_length: int = 3,
+                 min_response_length: int = 1,
                  max_response_length: int = 9999999900):  
         # Added max length
         self.console = console

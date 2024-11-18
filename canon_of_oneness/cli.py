@@ -4,6 +4,7 @@ import io
 from rich.console import Console
 from .response_handler import ResponseHandler
 from .story import Story
+import sys
 
 class GameCLI(cmd.Cmd):
     prompt = "\n> "
@@ -17,6 +18,10 @@ class GameCLI(cmd.Cmd):
         # redirect stdout to a buffer
         self.log_buffer = io.StringIO()
         self._setup_logging()
+        
+        # Create event loop
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
         
         # Initialize game components
         self.response_handler = ResponseHandler(
@@ -72,7 +77,7 @@ class GameCLI(cmd.Cmd):
         """Handle player input."""
         if not line:
             return
-        asyncio.run(self.response_handler.process_response(line))
+        self.loop.run_until_complete(self.response_handler.process_response(line))
 
     def do_next(self, arg: str) -> None:
         """Progress to next paragraph if conditions are met."""
@@ -81,7 +86,8 @@ class GameCLI(cmd.Cmd):
     def do_quit(self, arg: str) -> bool:
         """Exit the game."""
         self.console.print("\nThank you for playing!", style="cyan bold")
-        return True
+        self.loop.close()
+        sys.exit(0)
 
     def do_help(self, arg: str) -> None:
         """Display help information."""
