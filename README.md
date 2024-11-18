@@ -23,9 +23,9 @@ This system creates an interactive narrative experience where:
 - Each player response is analyzed for its semantic relevance to the current context
 - Stability ranges from 0-1 (0% to 100%)
 - Different stability levels trigger different states:
-  - 0-10%: Critical instability (resets current paragraph progress)
-  - 10-30%: Dangerous (may trigger glitches)
-  - 30-50%: Unstable
+  - 0-30%: Critical instability (resets current paragraph progress)
+  - 30-40%: Dangerous (may trigger glitches)
+  - 40-50%: Unstable
   - 50-70%: Stable
   - 70-100%: Optimal
 
@@ -77,11 +77,7 @@ Create a `.env` file with the following variables:
 1. Clone the repository
 2. Install dependencies using either:
    ```bash
-   pip install -r requirements.txt
-   ```
-   OR
-   ```bash
-   conda env create -f environment.yml
+   poetry install
    ```
 
 ### Running the Game

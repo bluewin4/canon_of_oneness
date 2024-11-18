@@ -5,3 +5,80 @@ package = []
 lock-version = "2.0"
 python-versions = "^3.10"
 content-hash = "53f2eabc9c26446fbcc00d348c47878e118afc2054778c3c803a0a8028af27d9"
+
+[[package]]
+name = "sentence-transformers"
+version = "2.2.0"
+description = "Sentence Embeddings using BERT / RoBERTa / XLM-RoBERTa with pytorch"
+optional = false
+python-versions = "*"
+
+[[package]]
+name = "numpy"
+version = "1.21.0"
+description = "NumPy is the fundamental package for array computing with Python."
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
+name = "rich"
+version = "10.0.0"
+description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
+optional = false
+python-versions = ">=3.6,<4.0"
+
+[[package]]
+name = "anthropic"
+version = "0.5.0"
+description = "The official Python library for the Anthropic API"
+optional = false
+python-versions = ">=3.7.1"
+
+[[package]]
+name = "python-dotenv"
+version = "0.19.0"
+description = "Read key-value pairs from a .env file and set them as environment variables"
+optional = false
+python-versions = "*"
+
+[[package]]
+name = "pytest"
+version = "7.0.0"
+description = "pytest: simple powerful testing with Python"
+optional = false
+python-versions = ">=3.6"
+
+[[package]]
+name = "pytest-cov"
+version = "4.0.0"
+description = "Pytest plugin for measuring coverage."
+optional = false
+python-versions = ">=3.6"
+
+[[package]]
+name = "pytest-mock"
+version = "3.10.0"
+description = "Thin-wrapper around the mock package for easier use with pytest"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
+name = "aijson-core"
+version = "0.2.2"
+description = "Core functionality for AI JSON processing"
+optional = false
+python-versions = "*"
+
+[[package]]
+name = "aijson-utils"
+version = "0.1.5"
+description = "Utility functions for AI JSON processing"
+optional = false
+python-versions = "*"
+
+[[package]]
+name = "aijson-meta"
+version = "0.1.9"
+description = "Metadata handling for AI JSON processing"
+optional = false
+python-versions = "*"

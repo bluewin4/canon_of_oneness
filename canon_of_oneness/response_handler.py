@@ -9,6 +9,7 @@ from aijson.utils.async_utils import merge_iterators
 from rich import box
 
 from .story import Memory, Story
+import asyncio
 
 # Set the environment variable before other imports
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -178,13 +179,13 @@ class ResponseHandler:
                 stability = val
                 
                 # Handle critical stability first
-                if stability < 0.1:
+                if stability < 0.3:
                     stability_panel_group.clear()
                     stability_panel_group.append(
                         self._create_stability_status_panel(stability)
                     )
                     self._render()
-                    self._handle_critical_stability()
+                    await self._handle_critical_stability()
                     return  # Exit early to prevent further processing
                 
                 # Normal stability handling
@@ -242,10 +243,10 @@ class ResponseHandler:
     def _create_stability_status_panel(self, stability: float) -> Panel:
         """Display a visual stability meter with enhanced warnings."""
         # Determine color and warning level
-        if stability < 0.1:
+        if stability < 0.3:
             color = "red bold blink"
             warning = "CRITICAL"
-        elif stability < 0.3:
+        elif stability < 0.4:
             color = "red"
             warning = "DANGEROUS"
         elif stability < 0.5:
@@ -274,9 +275,9 @@ class ResponseHandler:
         return Panel(panel_content, style=color, title="Stability Meter")
     
     def _create_stability_feedback_panel(self, stability: float) -> Panel:
-        if stability < 0.1:
+        if stability < 0.3:
             feedback_message = "[CRITICAL INSTABILITY DETECTED] The narrative is collapsing. Returning to last stable point..."
-        elif stability < 0.3:
+        elif stability < 0.4:
             feedback_message = "⚠️ WARNING: Narrative stability critical. Choose your next words carefully."
         elif stability < 0.5:
             feedback_message = "The narrative feels unstable. Try staying closer to the current context."
@@ -307,10 +308,10 @@ class ResponseHandler:
         stability_percentage = int(stability * 100)
         
         # Determine color and warning level
-        if stability < 0.1:
+        if stability < 0.3:
             color = "red bold blink"
             warning = "CRITICAL"
-        elif stability < 0.3:
+        elif stability < 0.4:
             color = "red"
             warning = "DANGEROUS"
         elif stability < 0.5:
@@ -514,37 +515,66 @@ class ResponseHandler:
     #         message=message
     #     )
 
-    def _handle_critical_stability(self) -> None:
+    async def _handle_critical_stability(self) -> None:
         """Handle critical stability by showing glitches and reverting paragraph."""
         current_para = self.story.get_paragraph(self.current_index)
-        if not current_para or not current_para.glitches:
+        if not current_para:
             return
-
-        # Show all glitches for dramatic effect
-        glitch_panel_group = []
-        for glitch in current_para.glitches:
-            panel = Panel(
-                glitch.content,
-                style="red bold blink",
-                border_style="red",
-                box=box.HEAVY
-            )
-            glitch_panel_group.append(panel)
         
-        # Add glitch panels to display
-        self.panels.append(glitch_panel_group)
+        # Show critical stability warning
+        warning_panel = Panel(
+            "[CRITICAL INSTABILITY DETECTED]\nThe narrative is collapsing...",
+            style="red bold blink"
+        )
+        self.panels.append(warning_panel)
         self._render()
+        
+        # Show glitch effects if they exist
+        if current_para.glitches:
+            glitch_panel_group = []
+            for glitch in current_para.glitches:
+                panel = Panel(
+                    glitch.content,
+                    style="red bold blink",
+                    border_style="red",
+                    box=box.HEAVY
+                )
+                glitch_panel_group.append(panel)
+            
+            self.panels.append(glitch_panel_group)
+            self._render()
 
         # Pause for dramatic effect
-        import time
-        time.sleep(2)
+        await asyncio.sleep(2)
 
         # Revert to previous paragraph
         if self.current_index > 0:
+            # Clear discovered memories for current paragraph
+            self.discovered_memories[self.current_index].clear()
+            self.memory_history[self.current_index].clear()
+            
+            # Revert to previous paragraph
             self.current_index -= 1
             self.reset_panels()
+            
+            # Show reversion warning
             self.panels.append(Panel(
                 "[CRITICAL INSTABILITY - REVERTING TO PREVIOUS STABLE STATE]",
+                style="red bold blink"
+            ))
+            
+            # Re-add the previous paragraph's content and stats
+            self.panels.append(self._create_current_paragraph_panel())
+            self.panels.append(self._create_stats_panel(
+                self.discovered_memories[self.current_index]
+            ))
+            
+            self._render()
+        else:
+            # If we're at the first paragraph, just reset the current one
+            self.reset_panels()
+            self.panels.append(Panel(
+                "[CRITICAL INSTABILITY - RESETTING CURRENT STATE]",
                 style="red bold blink"
             ))
             self.panels.append(self._create_current_paragraph_panel())
