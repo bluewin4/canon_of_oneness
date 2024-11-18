@@ -43,33 +43,6 @@ This system creates an interactive narrative experience where:
   - Discovering all memories in current section
   - Using the 'next' command when available
 
-## Technical Architecture
-
-### Vector Engine (`VectorEngine`)
-- Uses sentence transformers for semantic analysis
-- Embeds story segments and player responses
-- Calculates narrative stability
-- Detects memory triggers through semantic proximity
-
-### State Machine (`StateMachine`)
-- Manages game state transitions
-- Tracks discovered memories and glitches
-- Handles paragraph progression
-- Manages narrative stability effects
-
-### Response Handler (`ResponseHandler`)
-- Processes player input
-- Coordinates between Vector Engine and State Machine
-- Generates appropriate feedback
-- Manages narrative coherence
-
-### Story Parser (`StoryParser`)
-- Parses story content from text files
-- Organizes content into segments:
-  - Main paragraphs
-  - Hidden memories
-  - Potential glitches
-
 ## Usage
 
 ## Story File Format
@@ -95,10 +68,6 @@ Stories are structured in `story.txt` with segments marked by IDs:
    ```bash
    conda env create -f environment.yml
    ```
-3. Run the parameter optimization script to find the best parameters, if you find the story is unstable or want to change the story/oracle sequences:
-    ```bash
-    python optimize_parameters.py
-    ```
 
 ### Running the Game
 
