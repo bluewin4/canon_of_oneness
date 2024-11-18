@@ -1,15 +1,8 @@
 import asyncio
 import cmd
 import io
-import os
-import sys
-from typing import Optional
 from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.progress_bar import ProgressBar
 from ..engine.response_handler import ResponseHandler
-from ..engine.vector_engine import VectorEngine
 from ..models.story import Story
 
 class GameCLI(cmd.Cmd):

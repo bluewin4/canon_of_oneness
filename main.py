@@ -1,8 +1,12 @@
 from pathlib import Path
 import sys
+from dotenv import load_dotenv
 import tomli
 from src.models.story import Story
 from src.interface.cli import GameCLI
+
+load_dotenv()
+
 
 def load_story(story_file: Path) -> Story:
     """Load story from TOML file."""
