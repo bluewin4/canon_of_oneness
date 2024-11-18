@@ -2,8 +2,8 @@ from pathlib import Path
 import sys
 from dotenv import load_dotenv
 import tomli
-from src.story import Story
-from src.cli import GameCLI
+from canon_of_oneness.story import Story
+from canon_of_oneness.cli import GameCLI
 
 load_dotenv()
 
