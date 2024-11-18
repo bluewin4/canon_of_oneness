@@ -57,6 +57,14 @@ Stories are structured in `story.txt` with segments marked by IDs:
 - python-dotenv
 - requests
 
+## Environment
+
+Create a `.env` file with the following variables:
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `DEBUG` (optional, if truthy shows debug panel with logs)
+- `LOG_CONFIG` (optional, defaults to `warning`)
+
 ## Installation
 
 1. Clone the repository
